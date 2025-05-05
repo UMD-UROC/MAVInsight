@@ -1,57 +1,63 @@
 ---
-description: >-
-  Step-by-step guide to set up MAVROS for live MAVLINK data visualization.
+description: Step-by-step guide to set up MAVROS for live MAVLINK data visualization.
 ---
 
-# Installation and Setup Guide
+# Installation / Setup
 
 ## Prerequisites
 
 Ensure the following requirements are met before proceeding:
 
 1. **Operating System**: Ubuntu 22.04 LTS.
-2. **Required Packages**: Install these via `apt`:
-   ```bash
-   sudo apt update && sudo apt install git wget curl make build-essential python3 python3-pip
-   ```
-3. **Sudo Permissions**: Ensure you have administrative privileges.
+2. **Sudo Permissions**: Ensure you have administrative privileges.
+3.  **Required Packages**: Install these via `apt`:
 
----
+    ```bash
+    sudo apt update && sudo apt install git wget curl make build-essential python3 python3-pip
+    ```
 
-## Step 1: Install PX4
+***
 
-Follow the official PX4 installation guide for Ubuntu:
+{% hint style="warning" %}
+## NOTE: Some commands may require user verification. When executing these commands please ensure that you accept or continue when prompted.
+{% endhint %}
 
-[PX4 Development Environment Setup](https://docs.px4.io/main/en/dev_setup/dev_env_linux_ubuntu.html)
+## Step 1: Installing PX4 and ROS 2
 
-> **Note**: Use the instructions for the [Gazebo Simulator](https://docs.px4.io/main/en/sim_gazebo_gz/) ("Harmonic") on Ubuntu 22.04.
+1. **Set Up PX4 Environment**:
+   1. Navigate to the "[Install PX4](https://docs.px4.io/main/en/ros2/user_guide.html#install-px4)" header
+   2. Scroll down to "Set up a PX4 development environment on Ubuntu."
+      1. Copy and paste the provided command block.
+2. **Download and Install ROS2**:
+   * Navigate to the "[Install ROS 2](https://docs.px4.io/main/en/ros2/user_guide.html#install-px4)" section.
+   * Follow steps one and two to install ROS 2 Humble. Note: This may take a few minutes.
 
----
+Stop at the "Setup Micro XRCE-DDS Agent & Client" section
 
-## Step 2: Install ROS2
+***
 
-Follow the official ROS2 installation guide:
+## Step 2: Download QGroundControl
 
-[ROS2 Installation Guide](https://docs.px4.io/main/en/ros2/user_guide.html#installation-setup)
+Run these commands to download QGroundControl:
 
-> **Note**: Use the instructions for ROS2 "Humble".
+```bash
+# Downloading the x86_64 QGroundControl
+cd ~
+curl -O https://d176tv9ibo4jno.cloudfront.net/builds/master/QGroundControl-x86_64.AppImage
 
----
+# Making the file executable
+chmod +x QGroundControl-x86_64.AppImage
 
-## Step 3: Install QGroundControl
+# Giving user dialout permissions
+sudo usermod -a -G dialout $USER
+sudo apt-get remove modemmanager -y
+```
 
-Follow the steps to install QGroundControl:
+Then reboot your system so the user permissions changes take effect
 
-[QGroundControl Daily Build](https://docs.px4.io/main/en/dev_setup/qgc_daily_build.html)
+***
 
-> **Important**: Download QGroundControl in your home directory. Run the following command to ensure this:
-> ```bash
-> cd ~
-> ```
-
----
-
-## Step 4: Install PlotJuggler
+## Step 3: Install PlotJuggler
 
 Install PlotJuggler using the Snap package manager:
 
@@ -59,39 +65,44 @@ Install PlotJuggler using the Snap package manager:
 sudo snap install plotjuggler
 ```
 
----
+***
 
-## Step 5: Install MAVROS
+## Step 4: Install MAVROS
 
 Install MAVROS and its dependencies with the following commands:
 
 ```bash
+cd ~
 sudo apt install ros-humble-mavros ros-humble-mavros-extras
 wget https://raw.githubusercontent.com/mavlink/mavros/ros2/mavros/scripts/install_geographiclib_datasets.sh
 sudo sh install_geographiclib_datasets.sh
 ```
 
----
+***
 
-## Step 6: Enable Port Forwarding in QGroundControl
+## Step 5: Enable Port Forwarding in QGroundControl
 
 To enable port forwarding in QGroundControl:
 
-1. Launch QGroundControl:
-   ```bash
-   cd ~
-   ./QGroundControl.AppImage
-   ```
-2. Follow the steps shown in the screenshots below to enable port forwarding:
+1.  Launch QGroundControl:
 
-   ![Step 2](.gitbook/assets/Step2.png)
-   ![Step 3](.gitbook/assets/Step3.png)
-   ![Step 4](.gitbook/assets/Step4.png)
-   ![Step 5](.gitbook/assets/Step5.png)
+    ```bash
+    cd ~
+    ./QGroundControl-x86_64.AppImage
+    ```
+2.  Follow the steps shown in the screenshots below to enable port forwarding:
 
----
+    ![Step 2](.gitbook/assets/Step2.png) ![Step 3](.gitbook/assets/Step3.png) ![Step 4](.gitbook/assets/Step4.png) ![Step 5](.gitbook/assets/Step5.png)
 
-## Step 7: Testing the Setup
+{% hint style="warning" %}
+Due to a recent QGroundControl UI update, the MAVLINK forwarding configuration has been moved to the telemetry tab.
+{% endhint %}
+
+You can now close QGroundControl
+
+***
+
+## Step 6: Testing the Setup
 
 Open four terminal windows and execute the following commands in each:
 
@@ -106,7 +117,7 @@ make px4_sitl gz_x500
 
 ```bash
 cd ~
-./QGroundControl.AppImage
+./QGroundControl-x86_64.AppImage
 ```
 
 ### Terminal 3: Start MAVROS
@@ -121,15 +132,14 @@ ros2 run mavros mavros_node --ros-args -p fcu_url:=udp://:14540@127.0.0.1:14557 
 plotjuggler
 ```
 
----
+***
 
-## Step 8: Using PlotJuggler
+## Step 7: Using PlotJuggler
 
 To visualize live data in PlotJuggler:
 
 1. Click the **Start** button under the "Streaming" section on the left side of the screen.
-2. Ensure "ROS Topic Subscriber" is selected.
+2. Ensure "ROS Topic Subscriber" is selected like so.
+3. Then click the start button and select the desired topics to subscribe to.
 
 ![PlotJuggler Interface](.gitbook/assets/image.png)
-
-> **Note**: Verify that the correct ROS topic is being subscribed to for live data visualization.
