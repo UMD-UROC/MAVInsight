@@ -38,7 +38,9 @@ Stop at the "Setup Micro XRCE-DDS Agent & Client" section
 
 ## Step 2: Download QGroundControl
 
-Run these commands to download QGroundControl:
+Navigate to the [Ubuntu Linux](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/getting_started/download_and_install.html#ubuntu) section and follow the steps all the way to the Android section.
+
+Provided below is a copy of the commands I had to execute:
 
 ```bash
 # Downloading the x86_64 QGroundControl
@@ -59,7 +61,9 @@ Then reboot your system so the user permissions changes take effect
 
 ## Step 3: Install PlotJuggler
 
-Install PlotJuggler using the Snap package manager:
+Install PlotJuggler via the install [instructions](https://github.com/facontidavide/PlotJuggler?tab=readme-ov-file#installation) for Ubuntu 22.04 with ROS2 support.
+
+In my case I had to run the command below:
 
 ```bash
 sudo snap install plotjuggler
@@ -69,7 +73,9 @@ sudo snap install plotjuggler
 
 ## Step 4: Install MAVROS
 
-Install MAVROS and its dependencies with the following commands:
+To install MAVROS, follow these installation [instructions](https://github.com/mavlink/mavros/blob/ros2/mavros/README.md#installation).&#x20;
+
+In my case I had to run the following commands below:
 
 ```bash
 cd ~
