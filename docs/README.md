@@ -4,13 +4,13 @@ description: Step-by-step guide to set up MAVROS for live MAVLINK data visualiza
 
 # Installation / Setup
 
-## Prerequisites
+### Prerequisites
 
-Ensure the following requirements are met before proceeding:
+Before you begin, ensure you meet the following requirements:
 
-1. **Operating System**: Ubuntu 22.04 LTS.
-2. **Sudo Permissions**: Ensure you have administrative privileges.
-3.  **Required Packages**: Install these via `apt`:
+1. **Operating System**: Ubuntu 22.04 LTS
+2. **Sudo Permissions**: You must have administrative privileges.
+3.  **Required Packages**: Install the following packages using `apt`:
 
     ```bash
     sudo apt update && sudo apt install git wget curl make build-essential python3 python3-pip
@@ -19,28 +19,28 @@ Ensure the following requirements are met before proceeding:
 ***
 
 {% hint style="warning" %}
-## NOTE: Some commands may require user verification. When executing these commands please ensure that you accept or continue when prompted.
+### NOTE: Some commands may require user verification. Please accept or continue when prompted during execution.
 {% endhint %}
 
-## Step 1: Installing PX4 and ROS 2
+### Step 1: Install PX4 and ROS 2
 
 1. **Set Up PX4 Environment**:
-   1. Navigate to the "[Install PX4](https://docs.px4.io/main/en/ros2/user_guide.html#install-px4)" header
-   2. Scroll down to "Set up a PX4 development environment on Ubuntu."
+   1. Go to the [Install PX4](https://docs.px4.io/main/en/ros2/user_guide.html#install-px4) section.
+   2. Scroll to "Set up a PX4 development environment on Ubuntu."
       1. Copy and paste the provided command block.
-2. **Download and Install ROS2**:
-   * Navigate to the "[Install ROS 2](https://docs.px4.io/main/en/ros2/user_guide.html#install-px4)" section.
-   * Follow steps one and two to install ROS 2 Humble. Note: This may take a few minutes.
+2. **Download and Install ROS 2**:
+   * Go to the [Install ROS 2](https://docs.px4.io/main/en/ros2/user_guide.html#install-px4) section.
+   * Follow steps one and two to install ROS 2 Humble. Note: This process may take several minutes.
 
-Stop at the "Setup Micro XRCE-DDS Agent & Client" section
+Stop at the "Setup Micro XRCE-DDS Agent & Client" section.
 
 ***
 
-## Step 2: Install MAVROS
+### Step 2: Install MAVROS
 
-To install MAVROS, follow these installation [instructions](https://github.com/mavlink/mavros/blob/ros2/mavros/README.md#installation).&#x20;
+To install MAVROS, follow the [official instructions](https://github.com/mavlink/mavros/blob/ros2/mavros/README.md#installation).
 
-In my case I had to run the following commands below:
+In my case, I used the following commands:
 
 ```bash
 cd ~
@@ -51,30 +51,30 @@ sudo sh install_geographiclib_datasets.sh
 
 ***
 
-## Step 3: Download QGroundControl
+### Step 3: Download QGroundControl
 
-Navigate to the [Ubuntu Linux](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/getting_started/download_and_install.html#ubuntu) section and follow the steps all the way to the Android section.
+Go to the [Ubuntu Linux](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/getting_started/download_and_install.html#ubuntu) section and follow the steps up to the Android section.
 
-Provided below is a copy of the commands I had to execute:
+Here are the commands I used:
 
 ```bash
-# Downloading the x86_64 QGroundControl
+# Download the x86_64 QGroundControl
 cd ~
 curl -O https://d176tv9ibo4jno.cloudfront.net/builds/master/QGroundControl-x86_64.AppImage
 
-# Making the file executable
+# Make the file executable
 chmod +x QGroundControl-x86_64.AppImage
 
-# Giving user dialout permissions
+# Add user to dialout group
 sudo usermod -a -G dialout $USER
 sudo apt-get remove modemmanager -y
 ```
 
-Then reboot your system so the user permissions changes take effect
+Reboot your system to apply the user permission changes.
 
 ***
 
-## Step 4: Enable Port Forwarding in QGroundControl
+### Step 4: Enable Port Forwarding in QGroundControl
 
 To enable port forwarding in QGroundControl:
 
@@ -84,23 +84,31 @@ To enable port forwarding in QGroundControl:
     cd ~
     ./QGroundControl-x86_64.AppImage
     ```
-2.  Follow the steps shown in the screenshots below to enable port forwarding:
+2. Follow the steps in the screenshots below to enable port forwarding:
 
-    ![Step 2](.gitbook/assets/Step2.png) ![Step 3](.gitbook/assets/Step3.png) ![Step 4](.gitbook/assets/Step4.png) ![Step 5](.gitbook/assets/Step5.png)
+<figure><img src=".gitbook/assets/Step1.png" alt=""><figcaption></figcaption></figure>
+
+<figure><img src=".gitbook/assets/Step2.png" alt=""><figcaption></figcaption></figure>
+
+<figure><img src=".gitbook/assets/Step3.png" alt=""><figcaption></figcaption></figure>
+
+<figure><img src=".gitbook/assets/Step4.png" alt=""><figcaption></figcaption></figure>
+
+<figure><img src=".gitbook/assets/Step5.png" alt=""><figcaption></figcaption></figure>
 
 {% hint style="warning" %}
-Due to a recent QGroundControl UI update, the MAVLINK forwarding configuration has been moved to the telemetry tab.
+Due to a recent QGroundControl UI update, the MAVLINK forwarding configuration is now located in the telemetry tab.
 {% endhint %}
 
-You can now close QGroundControl
+You may now close QGroundControl.
 
 ***
 
-## Step 5 (Option 1): Install PlotJuggler
+### Step 5 (Option 1): Install PlotJuggler
 
-Install PlotJuggler via the install [instructions](https://github.com/facontidavide/PlotJuggler?tab=readme-ov-file#installation) for Ubuntu 22.04 with ROS2 support.
+Install PlotJuggler by following the [official instructions](https://github.com/facontidavide/PlotJuggler?tab=readme-ov-file#installation) for Ubuntu 22.04 with ROS2 support.
 
-In my case I had to run the command below:
+I used the following command:
 
 ```bash
 sudo snap install plotjuggler
@@ -108,15 +116,15 @@ sudo snap install plotjuggler
 
 ***
 
-## Step 5 (Option 2): Setup Foxglove
+### Step 5 (Option 2): Set Up Foxglove
 
-### Part 1: Installing Foxglove Desktop
+#### Part 1: Install Foxglove Desktop
 
-To install Foxglove use the instructions below:
+To install Foxglove, use the instructions below:
 
 {% embed url="https://foxglove.dev/download" %}
 
-In my case, I had to run the following commands below
+I used these commands:
 
 ```bash
 cd ~/Downloads
@@ -124,13 +132,11 @@ sudo apt install ./foxglove-studio-*.deb
 sudo apt update && sudo apt install foxglove-studio
 ```
 
-### Part 2:  Installing Foxglove Bridge
+#### Part 2: Install Foxglove Bridge
 
-Follow the directions linked below to install Foxglove bridge.
+Follow the instructions [here](https://docs.foxglove.dev/docs/connecting-to-data/ros-foxglove-bridge) to install Foxglove Bridge.
 
-{% embed url="https://docs.foxglove.dev/docs/connecting-to-data/ros-foxglove-bridge" %}
-
-In my case I ran this command:
+I ran this command:
 
 ```bash
 sudo apt install ros-humble-foxglove-bridge
@@ -138,25 +144,25 @@ sudo apt install ros-humble-foxglove-bridge
 
 ***
 
-## Step 6: Testing the Setup
+### Step 6: Test the Setup
 
-Open four terminal windows and execute the following commands in each:
+Open four terminal windows and run the following commands in each:
 
-### Terminal 1: Start PX4 with Gazebo
+#### Terminal 1: Start PX4 with Gazebo
 
 ```bash
 cd PX4-Autopilot/
 make px4_sitl gz_x500
 ```
 
-### Terminal 2: Launch QGroundControl
+#### Terminal 2: Launch QGroundControl
 
 ```bash
 cd ~
 ./QGroundControl-x86_64.AppImage
 ```
 
-### Terminal 3: Start MAVROS
+#### Terminal 3: Start MAVROS
 
 ```bash
 ros2 run mavros mavros_node --ros-args -p fcu_url:=udp://:14540@127.0.0.1:14557 -p target_component_id:=1 -r __ns:=/mavros
@@ -164,23 +170,23 @@ ros2 run mavros mavros_node --ros-args -p fcu_url:=udp://:14540@127.0.0.1:14557 
 
 ***
 
-### Launch Foxglove or PlotJuggler
+#### Launch Foxglove or PlotJuggler
 
-Depending on your needs you might need to use Foxglove or PlotJuggler.
+Depending on your needs, you may use either Foxglove or PlotJuggler.
 
-If you wish to run Foxglove then run the command below in a fourth terminal:
+To run Foxglove, use the following command in a fourth terminal:
 
 ```bash
 ros2 launch foxglove_bridge foxglove_bridge_launch.xml
 ```
 
-and this command in a fifth:
+And in a fifth terminal:
 
 ```
-foxglove-studio "foxglove://open?ds=foxglove-websocket&ds.url=ws://myrobot:8765/"
+foxglove-studio "foxglove://open?ds=foxglove-websocket&ds.url=ws://localhost:8765/"
 ```
 
-If you wish to run PlotJuggler run this command in a fourth terminal:
+To run PlotJuggler, use this command in a fourth terminal:
 
 ```bash
 plotjuggler
@@ -188,12 +194,12 @@ plotjuggler
 
 ***
 
-## Step 7 (PlotJuggler Only):
+### Step 7 (PlotJuggler Only):
 
 To visualize live data in PlotJuggler:
 
 1. Click the **Start** button under the "Streaming" section on the left side of the screen.
-2. Ensure "ROS Topic Subscriber" is selected like so.
-3. Then click the start button and select the desired topics to subscribe to.
+2. Ensure "ROS Topic Subscriber" is selected.
+3. Click the start button and select the desired topics to subscribe to.
 
-![PlotJuggler Interface](.gitbook/assets/image.png)
+<figure><img src=".gitbook/assets/image.png" alt=""><figcaption></figcaption></figure>
