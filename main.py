@@ -3,8 +3,6 @@ import subprocess
 import sys
 import os
 
-choice = 0
-
 # This script sets up a data visualization environment using either Foxglove or Plotjuggler.
 
 def run_cmd(cmd, cwd=None):
@@ -18,7 +16,7 @@ def run_cmd(cmd, cwd=None):
     )
 
 
-def run_setup():
+def run_setup(choice):
     print("Initiating Data Visualization Setup...")
     home = os.path.expanduser("~")
     # Start PX4 and Gazebo
@@ -58,7 +56,7 @@ def main():
     elif args.plotjuggler:
         choice = 2
 
-    run_setup()
+    run_setup(choice)
 
 if __name__ == "__main__":
     main()
