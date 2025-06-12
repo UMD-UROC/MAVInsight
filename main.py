@@ -3,17 +3,34 @@ import argparse
 import subprocess
 import sys
 import os
+import signal
+import time
+
+# Store all subprocess.Popen objects
+processes = []
 
 # run_cmd function is used to execute shell commands in the background
 def run_cmd(cmd, cwd=None):
     # Run command as current user with full environment, in correct directory
-    subprocess.Popen(
+    p = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         cwd=cwd,
         env=os.environ.copy()
     )
+    processes.append(subprocess.Popen(cmd, cwd=cwd, env=os.environ.copy()))
+
+# Function to handle cleanup on exit
+def terminate_processes():
+    print("Terminating all processes...")
+    for process in processes:
+        try:
+            process.send_signal(signal.SIGINT)  # Send SIGINT to gracefully stop the process
+            process.wait(timeout=5)  # Wait for the process to terminate
+        except subprocess.TimeoutExpired:
+            process.kill()  # Force kill if it doesn't terminate in time
+    print("All processes terminated.")
 
 # Setup function to initialize the data visualization environment
 def run_setup(choice):
@@ -38,9 +55,10 @@ def run_setup(choice):
     # Wait for CTRL-C to exit
     try:
         while True:
-            pass
+            time.sleep(1)
     except KeyboardInterrupt:
         print("Exiting Data Visualization Setup...")
+        terminate_processes()
         sys.exit(0)
 
 # Program entry point
