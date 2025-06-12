@@ -31,6 +31,13 @@ def run_setup():
         run_cmd(["foxglove-studio", '"foxglove://open?ds=foxglove-websocket&ds.url=ws://localhost:8765/"'])
     elif choice == 2:
         run_cmd(["plotjuggler"])
+    # Wait for CTRL-C to exit
+    try:
+        while True:
+            pass
+    except KeyboardInterrupt:
+        print("Exiting Data Visualization Setup...")
+        sys.exit(0)
 
 def main():
     parser = argparse.ArgumentParser(description="Choose a mode to run the script.")
