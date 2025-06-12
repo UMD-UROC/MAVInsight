@@ -1,10 +1,10 @@
+# This script sets up a data visualization environment using either Foxglove or Plotjuggler.
 import argparse
 import subprocess
 import sys
 import os
 
-# This script sets up a data visualization environment using either Foxglove or Plotjuggler.
-
+# run_cmd function is used to execute shell commands in the background
 def run_cmd(cmd, cwd=None):
     # Run command as current user with full environment, in correct directory
     subprocess.Popen(
@@ -15,7 +15,7 @@ def run_cmd(cmd, cwd=None):
         env=os.environ.copy()
     )
 
-
+# Setup function to initialize the data visualization environment
 def run_setup(choice):
     print("Initiating Data Visualization Setup...")
     home = os.path.expanduser("~")
@@ -43,6 +43,7 @@ def run_setup(choice):
         print("Exiting Data Visualization Setup...")
         sys.exit(0)
 
+# Program entry point
 def main():
     parser = argparse.ArgumentParser(description="Choose a mode to run the script.")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -51,11 +52,13 @@ def main():
 
     args = parser.parse_args()
 
+    # Determine which visualization tool to use based on command line arguments
     if args.foxglove:
         choice = 1
     elif args.plotjuggler:
         choice = 2
 
+    # Initiate the setup with the chosen visualization tool
     run_setup(choice)
 
 if __name__ == "__main__":
