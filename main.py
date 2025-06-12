@@ -19,7 +19,7 @@ def run_cmd(cmd, cwd=None):
         cwd=cwd,
         env=os.environ.copy()
     )
-    processes.append(subprocess.Popen(cmd, cwd=cwd, env=os.environ.copy()))
+    processes.append(p)
 
 # Function to handle cleanup on exit
 def terminate_processes():
@@ -38,21 +38,36 @@ def run_setup(choice):
     home = os.path.expanduser("~")
     # Start PX4 and Gazebo
     run_cmd(["make", "px4_sitl", "gz_x500"], cwd=os.path.join(home, "PX4-Autopilot"))
+    print("PX4 and Gazebo started successfully.")
+
     # Start QGroundControl
     run_cmd(["./QGroundControl-x86_64.AppImage"], cwd=home)
+    print("QGroundControl started successfully.")
+
     # Start ROS2 MAVROS node
     run_cmd([
         "ros2", "run", "mavros", "mavros_node",
         "--ros-args", "-p", "fcu_url:=udp://:14540@127.0.1:14557",
         "-p", "target_component_id:=1", "-r", "__ns:=/mavros"
     ])
+    print("MAVROS node started successfully.")
+
     # Start Foxglove or Plotjuggler
     if choice == 1:
+        # Start Foxglove Bridge
         run_cmd(["ros2", "launch", "foxglove_bridge", "foxglove_bridge_launch.xml"])
+        print("Foxglove Bridge started successfully.")
+
+        # Open Foxglove Studio with the WebSocket URL
         run_cmd(["foxglove-studio", "foxglove://open?ds=foxglove-websocket&ds.url=ws://localhost:8765/"])
+        print("Foxglove Studio opened successfully.")
     elif choice == 2:
+        # Start Plotjuggler
         run_cmd(["plotjuggler"])
+        print("Plotjuggler started successfully.")
+
     # Wait for CTRL-C to exit
+    print("Data Visualization Setup Initiated. Press CTRL-C to exit.")
     try:
         while True:
             time.sleep(1)
