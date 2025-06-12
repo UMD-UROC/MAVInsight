@@ -72,6 +72,10 @@ sudo apt-get remove modemmanager -y
 
 Reboot your system to apply the user permission changes.
 
+{% hint style="info" %}
+It is advised to download the AppImage into your home directory to match the steps these directions follow
+{% endhint %}
+
 ***
 
 ### Step 4: Enable Port Forwarding in QGroundControl
