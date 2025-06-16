@@ -85,7 +85,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-f", "--foxglove", action="store_true", help="Run in file mode")
     group.add_argument("-p", "--plotjuggler", action="store_true", help="Run in process mode")
-    group.add_argument("-ns", "--no-simulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
+    group.add_argument("-ns", "--nosimulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
 
     args = parser.parse_args()
 
@@ -98,7 +98,7 @@ def main():
         print("No valid option selected. Please choose either --foxglove or --plotjuggler.")
         sys.exit(1)
 
-    if args.no-simulation:
+    if args.nosimulation:
         print("Running without simulation (no PX4 or Gazebo).")
         nosim = True;
     else:
