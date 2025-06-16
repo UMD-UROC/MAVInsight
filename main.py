@@ -33,12 +33,12 @@ def terminate_processes():
     print("All processes terminated.")
 
 # Setup function to initialize the data visualization environment
-def run_setup(choice, no_sim):
+def run_setup(choice, nosim):
     print("Initiating Data Visualization Setup...")
     home = os.path.expanduser("~")
 
     # If no_sim is false run these commands
-    if not no_sim:
+    if not nosim:
         # Start PX4 and Gazebo
         run_cmd(["make", "px4_sitl", "gz_x500"], cwd=os.path.join(home, "PX4-Autopilot"))
         print("PX4 and Gazebo started successfully.")
@@ -98,14 +98,14 @@ def main():
         print("No valid option selected. Please choose either --foxglove or --plotjuggler.")
         sys.exit(1)
 
-    if args.no_simulation:
+    if args.no-simulation:
         print("Running without simulation (no PX4 or Gazebo).")
-        no-sim = True;
+        nosim = True;
     else:
-        no_sim = False
+        nosim = False
         
     # Initiate the setup with the chosen visualization tool
-    run_setup(choice, no-sim)
+    run_setup(choice, nosim)
 
 if __name__ == "__main__":
     main()
