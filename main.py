@@ -82,10 +82,14 @@ def run_setup(choice, nosim):
 # Program entry point
 def main():
     parser = argparse.ArgumentParser(description="Choose a mode to run the script.")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-f", "--foxglove", action="store_true", help="Run in file mode")
-    group.add_argument("-p", "--plotjuggler", action="store_true", help="Run in process mode")
-    group.add_argument("-ns", "--nosimulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
+    
+    # Create mutually exclusive group only for visualization tools
+    vis_group = parser.add_mutually_exclusive_group(required=True)
+    vis_group.add_argument("-f", "--foxglove", action="store_true", help="Run with Foxglove")
+    vis_group.add_argument("-p", "--plotjuggler", action="store_true", help="Run with Plotjuggler")
+    
+    # Add nosimulation as a separate optional argument
+    parser.add_argument("-ns", "--nosimulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
 
     args = parser.parse_args()
 
@@ -94,15 +98,11 @@ def main():
         choice = 1
     elif args.plotjuggler:
         choice = 2
-    else :
+    else:
         print("No valid option selected. Please choose either --foxglove or --plotjuggler.")
         sys.exit(1)
 
-    if args.nosimulation:
-        print("Running without simulation (no PX4 or Gazebo).")
-        nosim = True;
-    else:
-        nosim = False
+    nosim = args.nosimulation
         
     # Initiate the setup with the chosen visualization tool
     run_setup(choice, nosim)
