@@ -1,8 +1,4 @@
-"""Data visualization environment setup script.
-
-This script sets up a data visualization environment using either Foxglove or Plotjuggler.
-It starts PX4, Gazebo, QGroundControl, MAVROS, and the chosen visualization tool.
-"""
+# This script sets up a data visualization environment using either Foxglove or Plotjuggler.
 import argparse
 import subprocess
 import sys
@@ -13,42 +9,31 @@ import time
 # Store all subprocess.Popen objects
 processes = []
 
+# run_cmd function is used to execute shell commands in the background
 def run_cmd(cmd, cwd=None):
-    """Execute shell commands in the background.
-    
-    Args:
-        cmd: Command to execute as a list of strings
-        cwd: Working directory for the command (optional)
-    """
     # Run command as current user with full environment, in correct directory
-    with subprocess.Popen(
+    p = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         cwd=cwd,
         env=os.environ.copy()
-    ) as process:
-        processes.append(process)
+    )
+    processes.append(p)
 
+# Function to handle cleanup on exit
 def terminate_processes():
-    """Handle cleanup on exit by terminating all running processes."""
     print("Terminating all processes...")
     for process in processes:
         try:
             process.send_signal(signal.SIGINT)  # Send SIGINT to gracefully stop the process
-            # Wait for the process to terminate
-            # NOTE: if process doesn't quit in the alloted time it will be force killed
-            process.wait(timeout=10)
+            process.wait(timeout=10)  # Wait for the process to terminate NOTE: if process doesn't quit in the alloted time it will be force killed
         except subprocess.TimeoutExpired:
             process.kill()  # Force kill if it doesn't terminate in time
     print("All processes terminated.")
 
+# Setup function to initialize the data visualization environment
 def run_setup(choice):
-    """Initialize the data visualization environment.
-    
-    Args:
-        choice: Integer indicating visualization tool (1=Foxglove, 2=Plotjuggler)
-    """
     print("Initiating Data Visualization Setup...")
     home = os.path.expanduser("~")
     # Start PX4 and Gazebo
@@ -74,10 +59,7 @@ def run_setup(choice):
         print("Foxglove Bridge started successfully.")
 
         # Open Foxglove Studio with the WebSocket URL
-        run_cmd([
-            "foxglove-studio",
-            "foxglove://open?ds=foxglove-websocket&ds.url=ws://localhost:8765/"
-        ])
+        run_cmd(["foxglove-studio", "foxglove://open?ds=foxglove-websocket&ds.url=ws://localhost:8765/"])
         print("Foxglove Studio opened successfully.")
     elif choice == 2:
         # Start Plotjuggler
@@ -94,8 +76,8 @@ def run_setup(choice):
         terminate_processes()
         sys.exit(0)
 
+# Program entry point
 def main():
-    """Program entry point that handles command line arguments and starts setup."""
     parser = argparse.ArgumentParser(description="Choose a mode to run the script.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-f", "--foxglove", action="store_true", help="Run in file mode")
@@ -108,10 +90,6 @@ def main():
         choice = 1
     elif args.plotjuggler:
         choice = 2
-    else:
-        # This should never happen due to required=True, but added for safety
-        parser.error("No visualization tool selected")
-        return
 
     # Initiate the setup with the chosen visualization tool
     run_setup(choice)
