@@ -33,12 +33,15 @@ def terminate_processes():
     print("All processes terminated.")
 
 # Setup function to initialize the data visualization environment
-def run_setup(choice):
+def run_setup(choice, no_sim):
     print("Initiating Data Visualization Setup...")
     home = os.path.expanduser("~")
-    # Start PX4 and Gazebo
-    run_cmd(["make", "px4_sitl", "gz_x500"], cwd=os.path.join(home, "PX4-Autopilot"))
-    print("PX4 and Gazebo started successfully.")
+
+    # If no_sim is false run these commands
+    if not no_sim:
+        # Start PX4 and Gazebo
+        run_cmd(["make", "px4_sitl", "gz_x500"], cwd=os.path.join(home, "PX4-Autopilot"))
+        print("PX4 and Gazebo started successfully.")
 
     # Start QGroundControl
     run_cmd(["./QGroundControl-x86_64.AppImage"], cwd=home)
@@ -82,6 +85,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-f", "--foxglove", action="store_true", help="Run in file mode")
     group.add_argument("-p", "--plotjuggler", action="store_true", help="Run in process mode")
+    group.add_argument("-ns", "--no-simulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
 
     args = parser.parse_args()
 
@@ -90,9 +94,18 @@ def main():
         choice = 1
     elif args.plotjuggler:
         choice = 2
+    else :
+        print("No valid option selected. Please choose either --foxglove or --plotjuggler.")
+        sys.exit(1)
 
+    if args.no_simulation:
+        print("Running without simulation (no PX4 or Gazebo).")
+        no-sim = True;
+    else:
+        no_sim = False
+        
     # Initiate the setup with the chosen visualization tool
-    run_setup(choice)
+    run_setup(choice, no-sim)
 
 if __name__ == "__main__":
     main()
