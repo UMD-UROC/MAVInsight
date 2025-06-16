@@ -27,7 +27,7 @@ def terminate_processes():
     for process in processes:
         try:
             process.send_signal(signal.SIGINT)  # Send SIGINT to gracefully stop the process
-            process.wait(timeout=5)  # Wait for the process to terminate
+            process.wait(timeout=10)  # Wait for the process to terminate NOTE: if process doesn't quit in the alloted time it will be force killed
         except subprocess.TimeoutExpired:
             process.kill()  # Force kill if it doesn't terminate in time
     print("All processes terminated.")
