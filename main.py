@@ -40,7 +40,7 @@ def run_setup(choice, nosim):
     # If no_sim is false run these commands
     if not nosim:
         # Start PX4 and Gazebo
-        run_cmd(["make", "px4_sitl", "gz_x500"], cwd=os.path.join(home, "PX4-Autopilot"))
+        run_cmd(["make", "px4_sitl", "gz_x500_gimbal"], cwd=os.path.join(home, "PX4-Autopilot"))
         print("PX4 and Gazebo started successfully.")
 
     # Start QGroundControl
@@ -82,12 +82,12 @@ def run_setup(choice, nosim):
 # Program entry point
 def main():
     parser = argparse.ArgumentParser(description="Choose a mode to run the script.")
-    
+
     # Create mutually exclusive group only for visualization tools
     vis_group = parser.add_mutually_exclusive_group(required=True)
     vis_group.add_argument("-f", "--foxglove", action="store_true", help="Run with Foxglove")
     vis_group.add_argument("-p", "--plotjuggler", action="store_true", help="Run with Plotjuggler")
-    
+
     # Add nosimulation as a separate optional argument
     parser.add_argument("-ns", "--nosimulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
 
@@ -103,7 +103,7 @@ def main():
         sys.exit(1)
 
     nosim = args.nosimulation
-        
+
     # Initiate the setup with the chosen visualization tool
     run_setup(choice, nosim)
 
