@@ -57,6 +57,11 @@ def run_setup(choice, nosim):
 
     # Start Foxglove or Plotjuggler
     if choice == 1:
+        # Start UROC 3D Visualize Node
+        run_cmd(["colcon", "build", "--packages-select", "uroc"], cwd=os.path.expanduser("~/ros2_ws"))
+        run_cmd(["bash", "-c", "source install/local_setup.bash && ros2 run uroc visualize"], cwd=os.path.expanduser("~/ros2_ws"))
+        print("UROC ROS2 Visualize Node started successfully.")
+
         # Start Foxglove Bridge
         run_cmd(["ros2", "launch", "foxglove_bridge", "foxglove_bridge_launch.xml"])
         print("Foxglove Bridge started successfully.")
