@@ -51,7 +51,23 @@ sudo sh install_geographiclib_datasets.sh
 
 ***
 
-### Step 3: Download QGroundControl
+### Step 3: Clone UROC ROS Node
+
+To clone the UROC ROS node, copy and paste the following command block below into your terminal.
+
+```bash
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws/src
+git clone https://github.com/cdenihan/uroc-ros-package
+cd ..
+sudo rosdep init
+rosdep update
+rosdep install -i --from-path src --rosdistro humble -y
+```
+
+***
+
+### Step 4: Download QGroundControl
 
 Go to the [Ubuntu Linux](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/getting_started/download_and_install.html#ubuntu) section and follow the steps up to the Android section.
 
@@ -78,7 +94,7 @@ It is advised to download the AppImage into your home directory to match the ste
 
 ***
 
-### Step 4: Enable Port Forwarding in QGroundControl
+### Step 5: Enable Port Forwarding in QGroundControl
 
 To enable port forwarding in QGroundControl:
 
@@ -108,7 +124,7 @@ You may now close QGroundControl.
 
 ***
 
-### Step 5 (Option 1): Install PlotJuggler
+### Step 6 (Option 1): Install PlotJuggler
 
 Install PlotJuggler by following the [official instructions](https://github.com/facontidavide/PlotJuggler?tab=readme-ov-file#installation) for Ubuntu 22.04 with ROS2 support.
 
@@ -120,7 +136,7 @@ sudo snap install plotjuggler
 
 ***
 
-### Step 5 (Option 2): Set Up Foxglove
+### Step 6 (Option 2): Set Up Foxglove
 
 #### Part 1: Install Foxglove Desktop
 
@@ -148,7 +164,7 @@ sudo apt install ros-humble-foxglove-bridge
 
 ***
 
-### Step 6: Test the Setup
+### Step 7: Test the Setup
 
 Open four terminal windows and run the following commands in each:
 
@@ -181,12 +197,18 @@ Depending on your needs, you may use either Foxglove or PlotJuggler.
 To run Foxglove, use the following command in a fourth terminal:
 
 ```bash
-ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+cd ~/ros2_ws && colcon build --packages-select uroc && source install/local_setup.bash && ros2 run uroc visualize
 ```
 
 And in a fifth terminal:
 
+```bash
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
 ```
+
+And lastly in a sixth terminal run this command
+
+```bash
 foxglove-studio "foxglove://open?ds=foxglove-websocket&ds.url=ws://localhost:8765/"
 ```
 
@@ -198,7 +220,7 @@ plotjuggler
 
 ***
 
-### Step 7 (PlotJuggler Only):
+### Step 8: (PlotJuggler Only):
 
 To visualize live data in PlotJuggler:
 
@@ -207,3 +229,30 @@ To visualize live data in PlotJuggler:
 3. Click the start button and select the desired topics to subscribe to.
 
 <figure><img src=".gitbook/assets/image.png" alt=""><figcaption></figcaption></figure>
+
+***
+
+### Step 9 (Optional): Use Helper Script
+
+If you haven't noticed by now, you have to open a lot of terminals up. This can result in a mess appearing on your screen. To fix this a "helper script" was written. This script automates all of this into a single command.&#x20;
+
+Below is an example of how you would use this script:
+
+```bash
+# To start Foxglove data visualization tooling
+python3 mavinsight.py --foxglove
+
+# To start PlotJuggler data visualization tooling
+python3 mavinsight.py --plotjuggler
+```
+
+#### Installation:&#x20;
+
+There isn't really an "installation" for this script. You are just downloading it to a location of your choice. In the steps below, we will be downloading it to our home directory ($HOME).
+
+```bash
+cd ~
+curl -O https://raw.githubusercontent.com/cdenihan/MAVInsight/refs/heads/production/mavinsight.py
+```
+
+Then we can run the script as long as we are in our home directory and call it like demonstrated above.
