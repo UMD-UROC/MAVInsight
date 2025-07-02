@@ -58,7 +58,7 @@ To clone the UROC ROS node, copy and paste the following command block below int
 ```bash
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
-git clone https://github.com/cdenihan/uroc-ros-package
+git clone https://github.com/cdenihan/UMD-UROC-ROS2-Python-Package
 cd ..
 sudo rosdep init
 rosdep update
@@ -197,7 +197,7 @@ Depending on your needs, you may use either Foxglove or PlotJuggler.
 To run Foxglove, use the following command in a fourth terminal:
 
 ```bash
-cd ~/ros2_ws && colcon build --packages-select uroc && source install/local_setup.bash && ros2 run uroc visualize
+cd ~/ros2_ws && colcon build --packages-select py_uroc && source install/local_setup.bash && ros2 run py_uroc visualize
 ```
 
 And in a fifth terminal:
