@@ -33,7 +33,7 @@ def terminate_processes():
     print("All processes terminated.")
 
 # Setup function to initialize the data visualization environment
-def run_setup(choice, nosim):
+def run_setup(choice, nosim, noros):
     print("Initiating Data Visualization Setup...")
     home = os.path.expanduser("~")
 
@@ -58,9 +58,10 @@ def run_setup(choice, nosim):
     # Start Foxglove or Plotjuggler
     if choice == 1:
         # Start UROC 3D Visualize Node
-        run_cmd(["colcon", "build", "--packages-select", "py_uroc"], cwd=os.path.expanduser("~/ros2_ws"))
-        run_cmd(["bash", "-c", "source install/local_setup.bash && ros2 run py_uroc foxglove_3d_path_visualization"], cwd=os.path.expanduser("~/ros2_ws"))
-        print("UROC ROS2 Visualize Node started successfully.")
+        if not noros:
+            run_cmd(["colcon", "build", "--packages-select", "py_uroc"], cwd=os.path.expanduser("~/ros2_ws"))
+            run_cmd(["bash", "-c", "source install/local_setup.bash && ros2 launch py_uroc visualize.py"], cwd=os.path.expanduser("~/ros2_ws"))
+            print("UROC ROS2 python package started successfully.")
 
         # Start Foxglove Bridge
         run_cmd(["ros2", "launch", "foxglove_bridge", "foxglove_bridge_launch.xml"])
@@ -95,6 +96,7 @@ def main():
 
     # Add nosimulation as a separate optional argument
     parser.add_argument("-ns", "--nosimulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
+    parser.add_argument("-nr", "--noros", action="store_true", help="Run without py_uroc")
 
     args = parser.parse_args()
 
@@ -108,9 +110,10 @@ def main():
         sys.exit(1)
 
     nosim = args.nosimulation
+    noros = args.noros
 
     # Initiate the setup with the chosen visualization tool
-    run_setup(choice, nosim)
+    run_setup(choice, nosim, noros)
 
 if __name__ == "__main__":
     main()
