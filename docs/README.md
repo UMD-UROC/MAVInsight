@@ -51,16 +51,7 @@ sudo sh install_geographiclib_datasets.sh
 
 ***
 
-### Step 3: Setup UROC ROS Node
-
-Before we clone the node, we first need to install some required packages. Use the commands below to do so.
-
-```bash
-sudo apt-get install libxml2-dev libxslt-dev
-sudo apt-get install python3-numpy python3-pytest
-python3 -m pip install --upgrade future lxml
-python3 -m pip install --upgrade pymavlink
-```
+### Step 3: Clone UROC ROS Node
 
 To clone the UROC ROS node, copy and paste the following command block below into your terminal.
 
@@ -83,16 +74,13 @@ Go to the [Ubuntu Linux](https://docs.qgroundcontrol.com/master/en/qgc-user-guid
 Here are the commands I used:
 
 ```bash
-# Download the x86_64 QGroundControl
-cd ~
-curl -O https://d176tv9ibo4jno.cloudfront.net/builds/master/QGroundControl-x86_64.AppImage
-
-# Make the file executable
-chmod +x QGroundControl-x86_64.AppImage
-
-# Add user to dialout group
 sudo usermod -a -G dialout $USER
 sudo apt-get remove modemmanager -y
+sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-gl -y
+sudo apt install libfuse2 -y
+sudo apt install libxcb-xinerama0 libxkbcommon-x11-0 libxcb-cursor-dev -y
+cd ~
+curl -O https://d176tv9ibo4jno.cloudfront.net/builds/master/QGroundControl-x86_64.AppImage
 ```
 
 Reboot your system to apply the user permission changes.
