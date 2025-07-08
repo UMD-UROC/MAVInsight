@@ -19,7 +19,7 @@ Before you begin, ensure you meet the following requirements:
 ***
 
 {% hint style="warning" %}
-### NOTE: Some commands may require user verification. Please accept or continue when prompted during execution.
+#### NOTE: Some commands may require user verification. Please accept or continue when prompted during execution.
 {% endhint %}
 
 ### Step 1: Install PX4 and ROS 2
@@ -51,7 +51,16 @@ sudo sh install_geographiclib_datasets.sh
 
 ***
 
-### Step 3: Clone UROC ROS Node
+### Step 3: Setup UROC ROS Node
+
+Before we clone the node, we first need to install some required packages. Use the commands below to do so.
+
+```bash
+sudo apt-get install libxml2-dev libxslt-dev
+sudo apt-get install python3-numpy python3-pytest
+python3 -m pip install --upgrade future lxml
+python3 -m pip install --upgrade pymavlink
+```
 
 To clone the UROC ROS node, copy and paste the following command block below into your terminal.
 
@@ -234,7 +243,7 @@ To visualize live data in PlotJuggler:
 
 ### Step 9 (Optional): Use Helper Script
 
-If you haven't noticed by now, you have to open a lot of terminals up. This can result in a mess appearing on your screen. To fix this a "helper script" was written. This script automates all of this into a single command.&#x20;
+If you haven't noticed by now, you have to open a lot of terminals up. This can result in a mess appearing on your screen. To fix this a "helper script" was written. This script automates all of this into a single command.
 
 Below is an example of how you would use this script:
 
@@ -246,7 +255,7 @@ python3 mavinsight.py --foxglove
 python3 mavinsight.py --plotjuggler
 ```
 
-#### Installation:&#x20;
+#### Installation:
 
 There isn't really an "installation" for this script. You are just downloading it to a location of your choice. In the steps below, we will be downloading it to our home directory ($HOME).
 
