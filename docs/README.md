@@ -171,7 +171,7 @@ Open four terminal windows and run the following commands in each:
 
 ```bash
 cd PX4-Autopilot/
-make px4_sitl gz_x500
+make px4_sitl gz_x500_gimbal
 ```
 
 #### Terminal 2: Launch QGroundControl
