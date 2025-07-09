@@ -59,6 +59,7 @@ To clone the UROC ROS node, copy and paste the following command block below int
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 git clone https://github.com/cdenihan/UMD-UROC-ROS2-Python-Package
+mv UMD-UROC-ROS2-Python-Package py_uroc
 cd ..
 sudo rosdep init
 rosdep update
