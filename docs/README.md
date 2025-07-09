@@ -81,6 +81,7 @@ sudo apt install libfuse2 -y
 sudo apt install libxcb-xinerama0 libxkbcommon-x11-0 libxcb-cursor-dev -y
 cd ~
 curl -O https://d176tv9ibo4jno.cloudfront.net/builds/master/QGroundControl-x86_64.AppImage
+chmod +x QGroundControl*.AppImage
 ```
 
 Reboot your system to apply the user permission changes.
