@@ -194,7 +194,7 @@ Depending on your needs, you may use either Foxglove or PlotJuggler.
 To run Foxglove, use the following command in a fourth terminal:
 
 ```bash
-cd ~/ros2_ws && colcon build --packages-select py_uroc && source install/local_setup.bash && ros2 run py_uroc visualize
+cd ~/ros2_ws && colcon build --packages-select py_uroc && source install/local_setup.bash && ros2 launch py_uroc visualize.py
 ```
 
 And in a fifth terminal:
