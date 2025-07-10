@@ -60,6 +60,9 @@ mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 git clone https://github.com/cdenihan/UMD-UROC-ROS2-Python-Package
 mv UMD-UROC-ROS2-Python-Package py_uroc
+cd py_uroc
+git config core.hooksPath .githooks
+cd ..
 cd ..
 sudo rosdep init
 rosdep update
