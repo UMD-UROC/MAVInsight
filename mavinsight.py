@@ -60,7 +60,7 @@ def run_setup(choice, nosim, noros):
         # Start UROC 3D Visualize Node
         if not noros:
             run_cmd(["colcon", "build", "--packages-select", "py_uroc"], cwd=os.path.expanduser("~/ros2_ws"))
-            run_cmd(["bash", "-c", "source install/local_setup.bash && ros2 launch py_uroc visualize.py"], cwd=os.path.expanduser("~/ros2_ws"))
+            run_cmd(["bash", "-c", "source install/local_setup.bash && ros2 launch umd_uroc_data_visualizer visualize.py"], cwd=os.path.expanduser("~/ros2_ws"))
             print("UROC ROS2 python package started successfully.")
 
         # Start Foxglove Bridge
@@ -96,7 +96,7 @@ def main():
 
     # Add nosimulation as a separate optional argument
     parser.add_argument("-ns", "--nosimulation", action="store_true", help="Run without simulation (no PX4 or Gazebo)")
-    parser.add_argument("-nr", "--noros", action="store_true", help="Run without py_uroc")
+    parser.add_argument("-nr", "--noros", action="store_true", help="Run without umd_uroc_data_visualizer")
 
     args = parser.parse_args()
 
