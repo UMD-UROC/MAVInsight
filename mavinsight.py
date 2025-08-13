@@ -59,7 +59,7 @@ def run_setup(choice, nosim, noros):
     if choice == 1:
         # Start UROC 3D Visualize Node
         if not noros:
-            run_cmd(["colcon", "build", "--packages-select", "py_uroc"], cwd=os.path.expanduser("~/ros2_ws"))
+            run_cmd(["colcon", "build", "--packages-select", "umd_uroc_data_visualizer"], cwd=os.path.expanduser("~/ros2_ws"))
             run_cmd(["bash", "-c", "source install/local_setup.bash && ros2 launch umd_uroc_data_visualizer visualize.py"], cwd=os.path.expanduser("~/ros2_ws"))
             print("UROC ROS2 python package started successfully.")
 
