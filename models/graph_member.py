@@ -1,5 +1,11 @@
 class GraphMember:
-    """The base class for all objects that could be displayed in the 3D panel of Foxglove"""
+    """The base class for all objects that could be displayed in the 3D panel of Foxglove
+
+    Attributes:
+        frame_name      The string name of the frame that this object represents. (i.e. "base_link")
+        name            The string internal name of this object. (i.e. "Chimera D4")
+        parent_frame    The string name of the frame of the parent to this object. (i.e. "map")
+    """
     frame_name:str
     name:str
     parent_frame:str
