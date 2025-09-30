@@ -7,4 +7,3 @@ class Platforms(Enum):
     QUAD_COPTER = "quad"
     STATIONARY = "stationary"
     VTOL = "vtol"
-    

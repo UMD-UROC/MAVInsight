@@ -1,9 +1,11 @@
 class GraphMember:
     """The base class for all objects that could be displayed in the 3D panel of Foxglove"""
-    frame_tf:str
+    frame_name:str
     name:str
+    parent_frame:str
     
     # Constructors
-    def __init__(self, name:str = None, frame_tf:str = None):
+    def __init__(self, name:str = None, frame_name:str = None, parent_frame:str = None):
+        self.frame_name = frame_name
         self.name = name
-        self.frame_tf = frame_tf
+        self.parent_frame = parent_frame

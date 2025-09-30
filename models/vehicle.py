@@ -9,7 +9,10 @@ class Vehicle(GraphMember):
     platform: Platforms
     sensors: list[Sensor]
 
-    def __init__(self, name:str = None, frame_tf:str = None, platform:Platforms = None, *sensors:Sensor):
-        super().__init__(name, frame_tf)
+    def __init__(self, name:str = None,
+                 frame_name:str = None, parent_frame:str = "map",
+                 platform:Platforms = None,
+                 *sensors:Sensor):
+        super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
         self.platform = platform
         self.sensors = list(sensors)
