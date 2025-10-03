@@ -9,12 +9,14 @@ class GraphMember:
     frame_name:str
     name:str
     parent_frame:str
+    tab_char:str
     
     # Constructors
     def __init__(self, name:str = None, frame_name:str = None, parent_frame:str = None):
         self.frame_name = frame_name
         self.name = name
         self.parent_frame = parent_frame
+        self.tab_char = "|   "
 
     def __str__(self):
         return f"{self.name}\nTransform: {self.parent_frame} -> {self.frame_name}\n"

@@ -46,8 +46,8 @@ class Sensor(GraphMember):
         print(f"Successfully built Sensor: {self.name}")
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        t1 = "|  " * tab_depth
-        t2 = t1 + "|  "
+        t1 = self.tab_char * tab_depth
+        t2 = t1 + self.tab_char
         sensors_string = "[]" if len(self.sensors) == 0 else "\n"
         return (
             f"{t1}{self.name} | Sensor {self.sensor_type.name}\n" +
@@ -93,7 +93,7 @@ class Camera(Sensor):
         self.cam_info_topic = config_params["cam_info_topic"]
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        t = "|  " * (tab_depth + 1)
+        t = self.tab_char * (tab_depth + 1)
         camera_fields = f"{t}Camera info topic: {self.cam_info_topic}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
 
@@ -134,7 +134,7 @@ class Gimbal(Sensor):
         self.orientation_topic = config_params["orientation_topic"]
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        t = "|  " * (tab_depth + 1)
+        t = self.tab_char * (tab_depth + 1)
         gimbal_fields = f"{t}Orientation topic: {self.orientation_topic}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=gimbal_fields)
 
@@ -173,7 +173,7 @@ class Rangefinder(Sensor):
         self.range_topic = config_params["range_topic"]
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        t = "|  " * (tab_depth + 1)
+        t = self.tab_char * (tab_depth + 1)
         rangefinder_fields = f"{t}Range topic: {self.range_topic}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
 

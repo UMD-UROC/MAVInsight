@@ -48,8 +48,8 @@ class Vehicle(GraphMember):
         print(f"Successfully built Vehicle: {self.name}")
 
     def _format(self, tab_depth:int=0) -> str:
-        t1 = "|  " * tab_depth
-        t2 = t1 + "|  "
+        t1 = self.tab_char * tab_depth
+        t2 = t1 + self.tab_char
         sensors_string = "[]" if len(self.sensors) == 0 else "\n"
         return (
             f"{t1}{self.name} | Vehicle ({self.platform.name})\n" +
