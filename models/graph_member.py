@@ -15,3 +15,6 @@ class GraphMember:
         self.frame_name = frame_name
         self.name = name
         self.parent_frame = parent_frame
+
+    def __str__(self):
+        return f"{self.name}\nTransform: {self.parent_frame} -> {self.frame_name}\n"

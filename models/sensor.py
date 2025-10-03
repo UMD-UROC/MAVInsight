@@ -1,7 +1,7 @@
 # python imports
-import yaml
 from __future__ import annotations
 from pathlib import Path
+import yaml
 
 # ROS2 imports
 from ament_index_python import get_package_share_directory
@@ -14,9 +14,9 @@ class Sensor(GraphMember):
     """Class that defines a sensor and its relation to its parent frame
 
     Attributes:
-        offset      An (x, y, z) tuple that represents the static offset between the parent frame and this frame.
-        sensor_type The type of this Sensor (informed by MAVInsight.models.sensor_types.py enum).
-        sensors     A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
+        offset:      An (x, y, z) tuple that represents the static offset between the parent frame and this frame.
+        sensor_type: The type of this Sensor (informed by MAVInsight.models.sensor_types.py enum).
+        sensors:     A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
     """
     offset: tuple[float, float, float]
     sensor_type: SensorTypes
@@ -32,12 +32,34 @@ class Sensor(GraphMember):
                  sensors:list[str] = []):
         if len(offset) != 3:
             raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {offset}")
+        if any([type(val) != float for val in offset]):
+            raise ValueError(f"Sensor offset values must be floats. Received: {offset}")
         super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
         self.offset = offset
         self.sensor_type = sensor_type
         self.sensors = []
         for sensor_path in sensors:
-            self.sensors.append(sensor_factory(sensor_path))
+            try:
+                self.sensors.append(sensor_factory(sensor_path))
+            except Exception as e:
+                print(f"\033[31mFAILED building Sensor from file {sensor_path}: {e}\033[0m")
+        print(f"Successfully built Sensor: {self.name}")
+
+    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        t1 = "|  " * tab_depth
+        t2 = t1 + "|  "
+        sensors_string = "[]" if len(self.sensors) == 0 else "\n"
+        return (
+            f"{t1}{self.name} | Sensor {self.sensor_type.name}\n" +
+            f"{t2}Transform: {self.parent_frame} -> {self.frame_name}\n" +
+            f"{t2}Static offset from parent: (x: {self.offset[0]}, y: {self.offset[1]}, z: {self.offset[2]})\n" +
+            extra_fields +
+            f"{t2}Sensors: {sensors_string}" +
+            "\n".join(s._format(tab_depth=tab_depth + 2) for s in self.sensors)
+        )
+
+    def __str__(self):
+        return self._format()
 
 class Camera(Sensor):
     """Class defining a Camera for Foxglove Viz. Extends Sensor.
@@ -68,7 +90,15 @@ class Camera(Sensor):
                          offset=config_params["offset"],
                          parent_frame=config_params["parent_frame"],
                          sensor_type=SensorTypes(config_params["sensor_type"]))
-        self.cam_info_topic = config_params["camera_info_topic"]
+        self.cam_info_topic = config_params["cam_info_topic"]
+
+    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        t = "|  " * (tab_depth + 1)
+        camera_fields = f"{t}Camera info topic: {self.cam_info_topic}\n" + extra_fields
+        return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
+
+    def __str__(self):
+        return self._format()
 
 class Gimbal(Sensor):
     """Class defining a Gimbal for Foxglove Viz. Extends Sensor.
@@ -103,6 +133,14 @@ class Gimbal(Sensor):
                          sensors=config_params["sensors"])
         self.orientation_topic = config_params["orientation_topic"]
 
+    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        t = "|  " * (tab_depth + 1)
+        gimbal_fields = f"{t}Orientation topic: {self.orientation_topic}\n" + extra_fields
+        return super()._format(tab_depth=tab_depth, extra_fields=gimbal_fields)
+
+    def __str__(self):
+        return self._format()
+
 class Rangefinder(Sensor):
     """Class defining a Rangefinder for Foxglove Viz. Extends Sensor.
 
@@ -134,14 +172,24 @@ class Rangefinder(Sensor):
                          sensor_type=SensorTypes(config_params["sensor_type"]))
         self.range_topic = config_params["range_topic"]
 
+    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        t = "|  " * (tab_depth + 1)
+        rangefinder_fields = f"{t}Range topic: {self.range_topic}\n" + extra_fields
+        return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
+
+    def __str__(self):
+        return self._format()
+
 def sensor_factory(filename:str) -> Sensor:
     """Factory for producing a (supported) sensor defined in {TODO: make sensor config folder}"""
+    print(f"Attempting to build sensor from {filename}")
     path = Path(get_package_share_directory("mavinsight")) / "sensors" / filename
 
     if not path.is_file():
         raise ValueError(f"No configs found under {path}")
 
-    with open(path, 'r', encoding='utf-8') as sensor_config:
+    with open(path, 'r', encoding='utf-8') as sensor_file:
+        sensor_config = yaml.safe_load(sensor_file)
         match sensor_config["sensor_type"]:
             case SensorTypes.CAMERA.value:
                 return (Camera(sensor_config))
@@ -150,4 +198,4 @@ def sensor_factory(filename:str) -> Sensor:
             case SensorTypes.RANGEFINDER.value:
                 return (Rangefinder(sensor_config))
             case _:
-                raise ValueError(f"Unrecognized Sensor type: {sensor_config["sensor_type"]}")
+                raise ValueError(f"Unrecognized Sensor type: {sensor_config['sensor_type']}")
