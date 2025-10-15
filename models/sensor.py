@@ -13,37 +13,65 @@ from models.sensor_types import SensorTypes
 class Sensor(GraphMember):
     """Class that defines a sensor and its relation to its parent frame
 
-    Attributes:
-        offset:      An (x, y, z) tuple that represents the static offset between the parent frame and this frame.
-        sensor_type: The type of this Sensor (informed by MAVInsight.models.sensor_types.py enum).
-        sensors:     A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
+    Class Attributes
+    ----------------
+    param_reqs : list[str]
+        A list of required parameters/keys that a dict-encoded version of a `Sensor` would need
+        to be considered "valid". Inherited from `GraphMember` and extended.
+
+    Attributes
+    ----------
+    offset : list[float]
+        An [x, y, z] list of values that represents the static offset between the parent frame and this frame in meters.
+    sensor_type : str | SensorTypes
+        The type of this Sensor (informed by MAVInsight.models.sensor_types.py enum).
+    sensors : list[Sensor]
+        A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
     """
-    offset: tuple[float, float, float]
+    offset: list[float, float, float]
     sensor_type: SensorTypes
     sensors: list[Sensor]
 
+    param_reqs = GraphMember.param_reqs + ["offset", "sensor_type"]
+
     # Constructors
-    def __init__(self,
-                 frame_name:str = None,
-                 name:str = None,
-                 offset:list[float] = [0.0, 0.0, 0.0],
-                 parent_frame:str = None,
-                 sensor_type:SensorTypes = None,
-                 sensors:list[str] = []):
-        if len(offset) != 3:
-            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {offset}")
-        if any([type(val) != float for val in offset]):
-            raise ValueError(f"Sensor offset values must be floats. Received: {offset}")
+    def __init__(self, frame_name:str=None, name:str=None, offset:list[float]=[0.0,0.0,0.0], parent_frame:str=None, sensor_type:SensorTypes=None, sensors:list[Sensor]=[]):
+        """Basic Sensor constructor, no error/input checking/scrubbing"""
         super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
         self.offset = offset
         self.sensor_type = sensor_type
-        self.sensors = []
-        for sensor_path in sensors:
-            try:
-                self.sensors.append(sensor_factory(sensor_path))
-            except Exception as e:
-                print(f"\033[31mFAILED building Sensor from file {sensor_path}: {e}\033[0m")
-        print(f"Successfully built Sensor: {self.name}")
+        self.sensors = sensors
+
+    @classmethod
+    def from_dict(clazz, config_params: dict) -> Sensor:
+        if ("offset" not in config_params.keys()):
+            config_params["offset"] = [0.0,0.0,0.0]
+
+        if not clazz._dict_meets_reqs(config_params):
+            raise ValueError(f"Not enough params in dict to create Vehicle. Must have all of: {clazz.param_reqs}")
+
+        # parameter checking
+        if len(config_params["offset"]) != 3:
+            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
+        if any([type(val) != float for val in config_params["offset"]]):
+            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
+
+        return clazz(name=config_params["name"],
+                        frame_name=config_params["frame_name"],
+                        offset=config_params["offset"],
+                        parent_frame=config_params["parent_frame"],
+                        sensor_type=SensorTypes(config_params["sensor_type"]),
+                        sensors=Sensor._make_from_file_list(config_params.get("sensors", [])))
+
+    @staticmethod
+    def _make_from_file_list(file_list:list[str]) -> list[Sensor]:
+        s = []
+        for sensor_path in file_list:
+            #try:
+            s.append(sensor_factory(sensor_path))
+            # except Exception as e:
+            #     print(f"\033[31mFAILED building Sensor from file {sensor_path}: {e}\033[0m")
+        return s
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t1 = self.tab_char * tab_depth
@@ -64,33 +92,41 @@ class Sensor(GraphMember):
 class Camera(Sensor):
     """Class defining a Camera for Foxglove Viz. Extends Sensor.
 
-    Attributes:
-        cam_info_topic  The name of the topic carrying the camera info.
+    Class Attributes
+    ----------------
+    param_reqs : list[str]
+        A list of required parameters/keys that a dict-encoded version of a `Camera` would need
+        to be considered "valid". Inherited from `Sensor` and extended.
+
+    Attributes
+    ----------
+    cam_info_topic : str
+        The str name of the topic carrying the camera info.
     """
     cam_info_topic: str
 
+    param_reqs: list[str] = Sensor.param_reqs + ["cam_info_topic"]
+
     # Constructors
-    def __init__(self,
-                 cam_info_topic:str = None,
-                 frame_name:str = None,
-                 name:str = None,
-                 offset:list[float] = [0.0, 0.0, 0.0],
-                 parent_frame:str = None,
-                 sensor_type:SensorTypes = None):
+    def __init__(self, cam_info_topic:str=None, frame_name:str=None, name:str=None, offset:list[float]=[0.0, 0.0, 0.0], parent_frame:str=None, sensor_type:SensorTypes=None):
+        """Basic Camera constructor, no error/input checking/scrubbing"""
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
         self.cam_info_topic = cam_info_topic
 
-    def __init__(self, config_params:dict):
-        param_reqs = ["cam_info_topic", "frame_name", "name", "offset", "parent_frame", "sensor_type"]
-        if not set(param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params to build Camera. Must have all of {param_reqs}")
+    @classmethod
+    def from_dict(clazz, config_params:dict):
+        if not clazz._dict_meets_reqs(config_params):
+            raise ValueError(f"Not enough params in dict to create Camera. Must have all of: {clazz.param_reqs}")
 
-        super().__init__(frame_name=config_params["frame_name"],
-                         name=config_params["name"],
-                         offset=config_params["offset"],
-                         parent_frame=config_params["parent_frame"],
-                         sensor_type=SensorTypes(config_params["sensor_type"]))
-        self.cam_info_topic = config_params["cam_info_topic"]
+        if ("offset" not in config_params.keys()):
+            config_params["offset"] = [0.0,0.0,0.0]
+
+        return clazz(cam_info_topic = config_params["cam_info_topic"],
+                        frame_name=config_params["frame_name"],
+                        name=config_params["name"],
+                        offset=config_params["offset"],
+                        parent_frame=config_params["parent_frame"],
+                        sensor_type=SensorTypes(config_params["sensor_type"]))
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t = self.tab_char * (tab_depth + 1)
@@ -103,35 +139,41 @@ class Camera(Sensor):
 class Gimbal(Sensor):
     """Class defining a Gimbal for Foxglove Viz. Extends Sensor.
 
-    Attributes:
-        orientation_topic  The name of the topic carrying the gimbal orientation data.
+    Class Attributes
+    ----------------
+    param_reqs : list[str]
+        A list of required parameters/keys that a dict-encoded version of a `Gimbal` would need
+        to be considered "valid". Inherited from `Sensor` and extended.
+
+    Attributes
+    ----------
+    orientation_topic : str
+        The str name of the topic carrying the gimbal orientation data.
     """
     orientation_topic: str
 
+    param_reqs: list[str] = Sensor.param_reqs + ["orientation_topic"]
+
     # Constructors
-    def __init__(self,
-                 frame_name:str = None,
-                 name:str = None,
-                 offset:list[float] = [0.0, 0.0, 0.0],
-                 orientation_topic:str = None,
-                 parent_frame:str = None,
-                 sensor_type:SensorTypes = None,
-                 sensors:list[str] = []):
+    def __init__(self, frame_name:str = None, name:str = None, offset:list[float] = [0.0, 0.0, 0.0], orientation_topic:str = None, parent_frame:str = None, sensor_type:SensorTypes = None, sensors:list[str] = []):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type, sensors=sensors)
         self.orientation_topic = orientation_topic
 
-    def __init__(self, config_params:dict):
-        param_reqs = ["frame_name", "name", "offset", "orientation_topic", "parent_frame", "sensor_type", "sensors"]
-        if not set(param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params to build Gimbal. Must have all of {param_reqs}")
+    @classmethod
+    def from_dict(clazz, config_params:dict):
+        if not clazz._dict_meets_reqs(config_params):
+            raise ValueError(f"Not enough params in dict to create Gimbal. Must have all of: {clazz.param_reqs}")
 
-        super().__init__(frame_name=config_params["frame_name"],
-                         name=config_params["name"],
-                         offset=config_params["offset"],
-                         parent_frame=config_params["parent_frame"],
-                         sensor_type=SensorTypes(config_params["sensor_type"]),
-                         sensors=config_params["sensors"])
-        self.orientation_topic = config_params["orientation_topic"]
+        if ("offset" not in config_params.keys()):
+            config_params["offset"] = [0.0,0.0,0.0]
+
+        return clazz(frame_name=config_params["frame_name"],
+                        name=config_params["name"],
+                        offset=config_params["offset"],
+                        orientation_topic=config_params["orientation_topic"],
+                        parent_frame=config_params["parent_frame"],
+                        sensor_type=SensorTypes(config_params["sensor_type"]),
+                        sensors=Sensor._make_from_file_list(config_params.get("sensors", [])))
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t = self.tab_char * (tab_depth + 1)
@@ -144,33 +186,40 @@ class Gimbal(Sensor):
 class Rangefinder(Sensor):
     """Class defining a Rangefinder for Foxglove Viz. Extends Sensor.
 
-    Attributes:
-        range_topic  The name of the topic carrying the range info.
+    Class Attributes
+    ----------------
+    param_reqs : list[str]
+        A list of required parameters/keys that a dict-encoded version of a `Rangefinder` would need
+        to be considered "valid". Inherited from `Sensor` and extended.
+
+    Attributes
+    ----------
+    range_topic : str
+        The name of the topic carrying the range info.
     """
     range_topic: str
 
+    param_reqs: list[str] = Sensor.param_reqs + ["range_topic"]
+
     # Constructors
-    def __init__(self,
-                 frame_name:str = None,
-                 name:str = None,
-                 offset:tuple[float, float, float] = (0,0,0),
-                 parent_frame:str = None,
-                 range_topic:str = None,
-                 sensor_type:SensorTypes = None):
+    def __init__(self, frame_name:str = None, name:str = None, offset:list[float, float, float]=[0.0,0.0,0.0], parent_frame:str = None, range_topic:str = None, sensor_type:SensorTypes = None):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
         self.range_topic = range_topic
 
-    def __init__(self, config_params:dict):
-        param_reqs = ["frame_name", "name", "offset", "parent_frame", "range_topic", "sensor_type"]
-        if not set(param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params to build Rangefinder. Must have all of {param_reqs}")
+    @classmethod
+    def from_dict(clazz, config_params:dict):
+        if not clazz._dict_meets_reqs(config_params):
+            raise ValueError(f"Not enough params in dict to create Rangefinder. Must have all of: {clazz.param_reqs}")
 
-        super().__init__(frame_name=config_params["frame_name"],
-                         name=config_params["name"],
-                         offset=config_params["offset"],
-                         parent_frame=config_params["parent_frame"],
-                         sensor_type=SensorTypes(config_params["sensor_type"]))
-        self.range_topic = config_params["range_topic"]
+        if ("offset" not in config_params.keys()):
+            config_params["offset"] = [0.0,0.0,0.0]
+
+        return clazz(frame_name=config_params["frame_name"],
+                        name=config_params["name"],
+                        offset=config_params["offset"],
+                        parent_frame=config_params["parent_frame"],
+                        sensor_type=SensorTypes(config_params["sensor_type"]),
+                        range_topic=config_params["range_topic"])
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t = self.tab_char * (tab_depth + 1)
@@ -192,10 +241,10 @@ def sensor_factory(filename:str) -> Sensor:
         sensor_config = yaml.safe_load(sensor_file)
         match sensor_config["sensor_type"]:
             case SensorTypes.CAMERA.value:
-                return (Camera(sensor_config))
+                return (Camera.from_dict(sensor_config))
             case SensorTypes.GIMBAL.value:
-                return (Gimbal(sensor_config))
+                return (Gimbal.from_dict(sensor_config))
             case SensorTypes.RANGEFINDER.value:
-                return (Rangefinder(sensor_config))
+                return (Rangefinder.from_dict(sensor_config))
             case _:
                 raise ValueError(f"Unrecognized Sensor type: {sensor_config['sensor_type']}")

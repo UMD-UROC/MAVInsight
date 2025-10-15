@@ -46,7 +46,7 @@ class VehicleTfPublisher(Node):
             if vehicle_path.is_file():
                 try:
                     with open(vehicle_path, 'r', encoding='utf-8') as v:
-                        self.vehicles.append(Vehicle(yaml.safe_load(v)))
+                        self.vehicles.append(Vehicle.from_dict(yaml.safe_load(v)))
                 except (FileNotFoundError, PermissionError, IsADirectoryError, OSError) as e:
                     self.get_logger().error(f"Error reading file {vehicle_path}: {e}")
                 except (ValueError) as e:
