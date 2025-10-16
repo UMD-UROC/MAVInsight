@@ -16,8 +16,8 @@ class Sensor(GraphMember):
     Class Attributes
     ----------------
     param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Sensor` would need
-        to be considered "valid".
+        A list of required parameters/keys that a dict-encoded version of a `Sensor` would need,
+        in addition to the `GraphMember's`, to be considered "valid".
 
     Attributes
     ----------
@@ -43,9 +43,16 @@ class Sensor(GraphMember):
         self.sensors = sensors
 
     def check_dict(self, config_params):
+        """
+        A faux-constructor. Used to offload the parameter checking of a dict-encoded
+        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
+        and its subclasses.
+        """
+        # "guard" the case of a missing offset parameter from the dict. default to no offset: [0,0,0]
         if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
             config_params["offset"] = [0.0,0.0,0.0]
 
+        # check for required Sensor params
         if not set(Sensor.param_reqs).issubset(set(config_params.keys())):
             raise ValueError(f"Not enough params in dict to create Sensor. Must have all of: {Sensor.param_reqs}")
 
@@ -55,20 +62,37 @@ class Sensor(GraphMember):
         if any([type(val) != float for val in config_params["offset"]]):
             raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
 
+        # set Sensor params
         self.offset = config_params["offset"]
         self.sensor_type = SensorTypes(config_params["sensor_type"])
         self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
 
+        # let the super class check its own params
         super().check_dict(config_params)
 
     @staticmethod
     def _make_from_file_list(file_list:list[str]) -> list[Sensor]:
+        """Helper method to acquire a python list of qualified Sensor objects from a list
+        of the paths to/filenames of their yaml encodings.
+
+        This is useful, as `GraphMembers` that have other `GraphMembers` attached to them
+        (i.e. `Vehicles`->`Sensors, `Gimbals`->`Sensors`) encode their child `GraphMembers`
+        in their own yaml encodings as a list of filenames.
+
+        Parameters
+        ----------
+        file_list : list[str]
+            a list of the file names or paths of a correctly-yaml-encoded `Sensor` object.
+
+        Returns
+        -------
+        _ : list[Sensor]
+            a list of `Sensor` objects that were built based on the files named by the
+            input `file_list`.
+        """
         s = []
         for sensor_path in file_list:
-            #try:
             s.append(sensor_factory(sensor_path))
-            # except Exception as e:
-            #     print(f"\033[31mFAILED building Sensor from file {sensor_path}: {e}\033[0m")
         return s
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
@@ -93,8 +117,8 @@ class Camera(Sensor):
     Class Attributes
     ----------------
     param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Camera` would need
-        to be considered "valid".
+        A list of required parameters/keys that a dict-encoded version of a `Camera` would need,
+        in addition to the `Sensor's`, to be considered "valid".
 
     Attributes
     ----------
@@ -112,11 +136,19 @@ class Camera(Sensor):
         self.cam_info_topic = cam_info_topic
 
     def check_dict(self, config_params):
+        """
+        A faux-constructor. Used to offload the parameter checking of a dict-encoded
+        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
+        and its subclasses.
+        """
+        # check for required Camera params
         if not set(Camera.param_reqs).issubset(set(config_params.keys())):
             raise ValueError(f"Not enough params in dict to create Camera. Must have all of: {Camera.param_reqs}")
 
+        # set Camera params
         self.cam_info_topic = config_params["cam_info_topic"]
 
+        # let the super class check its own params
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
@@ -133,8 +165,8 @@ class Gimbal(Sensor):
     Class Attributes
     ----------------
     param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Gimbal` would need
-        to be considered "valid".
+        A list of required parameters/keys that a dict-encoded version of a `Gimbal` would need,
+        in addition to the `Sensor's`, to be considered "valid".
 
     Attributes
     ----------
@@ -151,12 +183,20 @@ class Gimbal(Sensor):
         self.orientation_topic = orientation_topic
 
     def check_dict(self, config_params):
+        """
+        A faux-constructor. Used to offload the parameter checking of a dict-encoded
+        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
+        and its subclasses.
+        """
+        # check for required Gimbal params
         if not set(Gimbal.param_reqs).issubset(set(config_params.keys())):
             raise ValueError(f"Not enough params in dict to create Gimbal. Must have all of: {Gimbal.param_reqs}")
 
+        # set Gimbal params
         self.orientation_topic = config_params["orientation_topic"]
         self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
 
+        # let the super class check its own params
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
@@ -173,8 +213,8 @@ class Rangefinder(Sensor):
     Class Attributes
     ----------------
     param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Rangefinder` would need
-        to be considered "valid".
+        A list of required parameters/keys that a dict-encoded version of a `Rangefinder` would need,
+        in addition to the `Sensor's`, to be considered "valid".
 
     Attributes
     ----------
@@ -191,11 +231,19 @@ class Rangefinder(Sensor):
         self.range_topic = range_topic
 
     def check_dict(self, config_params):
+        """
+        A faux-constructor. Used to offload the parameter checking of a dict-encoded
+        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
+        and its subclasses.
+        """
+        # check for required Rangefinder params
         if not set(Rangefinder.param_reqs).issubset(set(config_params.keys())):
             raise ValueError(f"Not enough params in dict to create Rangefinder. Must have all of: {Rangefinder.param_reqs}")
 
+        # set Rangefinder params
         self.range_topic = config_params["range_topic"]
 
+        # let the super class check its own params
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
@@ -209,10 +257,14 @@ class Rangefinder(Sensor):
 def sensor_factory(filename:str) -> Sensor:
     """Factory for producing a (supported) sensor defined in mavinsight/sensors/*.yaml."""
 
+    # this is necessary for unit tests and encoding test models in the test directory,
+    # regardless of abs path to this package
     if filename.startswith("_test/"):
         filename = filename.removeprefix("_test/")
         filename = Path(__file__).resolve().parent.parent / "test" / filename
 
+    # assume the node is looking for the name of a sensor config found in the shared config
+    # directory of this ROS package
     path = Path(filename)
     if not path.is_absolute():
         path = Path(get_package_share_directory("mavinsight")) / "sensors" / path
@@ -220,6 +272,7 @@ def sensor_factory(filename:str) -> Sensor:
     if not path.is_file():
         raise FileNotFoundError(f"No configs found under {path}")
 
+    # call the appropriate constructor based on the type of sensor provided
     with open(path, 'r', encoding='utf-8') as sensor_file:
         sensor_config = yaml.safe_load(sensor_file)
         if type(sensor_config) is not dict:
