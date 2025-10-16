@@ -1,6 +1,0 @@
-name: Working Vehicle
-frame_name: wv_base_link
-location_topic: /file/name
-parent_frame: map
-platform: quad
-sensors: []

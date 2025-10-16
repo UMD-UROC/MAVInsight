@@ -12,7 +12,7 @@ from std_msgs.msg import String
 from models.vehicle import Vehicle
 
 class VehicleTfPublisher(Node):
-    """The TF Publisher for Vehicles described in {TODO: configuration file path}"""
+    """The TF Publisher for Vehicles described in mavinsight/vehicles/*"""
     vehicles: list[Vehicle]
 
     def __init__(self):
