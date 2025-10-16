@@ -1,0 +1,5 @@
+name: Vehicle No Platform
+frame_name: no_platform_link
+location_topic: "/no/platform/fix"
+parent_frame: no_platform_parent
+sensors: []

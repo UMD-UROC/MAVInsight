@@ -211,7 +211,7 @@ def sensor_factory(filename:str) -> Sensor:
 
     if filename.startswith("_test/"):
         filename = filename.removeprefix("_test/")
-        filename = Path(__file__).resolve().parent.parent / "test/sensors" / filename
+        filename = Path(__file__).resolve().parent.parent / "test" / filename
 
     path = Path(filename)
     if not path.is_absolute():

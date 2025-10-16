@@ -1,0 +1,5 @@
+name: Vehicle No Topic
+frame_name: no_topic_link
+parent_frame: no_topic_parent
+platform: quad
+sensors: []

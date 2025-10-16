@@ -8,5 +8,5 @@ orientation_topic: /test/gimbal
 parent_frame: link
 sensor_type: gimbal
 sensors: 
-  - _test/cameras/full_camera.yaml
-  - _test/rangefinders/full_rangefinder.yaml
+  - _test/sensors/cameras/full_camera.yaml
+  - _test/sensors/rangefinders/full_rangefinder.yaml

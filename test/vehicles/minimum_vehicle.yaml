@@ -1,0 +1,4 @@
+name: Minimum Vehicle
+frame_name: minimum_vehicle_base_link
+location_topic: "/minimum/vehicle/fix"
+platform: quad

@@ -1,0 +1,5 @@
+frame_name: no_name_vehicle
+location_topic: "/no/name/fix"
+parent_frame: no_name_parent
+platform: quad
+sensors: []

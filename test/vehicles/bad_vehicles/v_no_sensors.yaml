@@ -1,0 +1,5 @@
+name: Vehicle No Sensors
+frame_name: no_sensors_link
+location_topic: "/no/sensors/fix"
+parent_frame: no_sensors_parent
+platform: quad

@@ -1,0 +1,8 @@
+name: Full Vehicle
+frame_name: full_vehicle_base_link
+location_topic: "/full/vehicle/fix"
+parent_frame: full_vehicle_parent
+platform: quad
+sensors:
+  - _test/sensors/cameras/cm_no_offset.yaml
+  - _test/sensors/gimbals/full_gimbal.yaml

@@ -1,8 +1,15 @@
+# python imports
 from __future__ import annotations
+from pathlib import Path
+import yaml
+
+# ROS2 imports
+from ament_index_python import get_package_share_directory
+
+# MAVInsight Imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
 from models.sensor import Sensor
-from models.sensor import sensor_factory
 
 class Vehicle(GraphMember):
     """Class that defines a drone platform and its Sensors
@@ -65,3 +72,24 @@ class Vehicle(GraphMember):
 
     def __str__(self):
         return self._format()
+
+def vehicle_factory(filename:str) -> Vehicle:
+    """Factory for producing a (supported) vehicle defined in mavinsight/vehicles/*.yaml."""
+
+    if filename.startswith("_test/"):
+        filename = filename.removeprefix("_test/")
+        filename = Path(__file__).resolve().parent.parent / "test/vehicles" / filename
+
+    path = Path(filename)
+    if not path.is_absolute():
+        path = Path(get_package_share_directory("mavinsight")) / "vehicles" / path
+
+    if not path.is_file():
+        raise FileNotFoundError(f"No configs found under {path}")
+
+    with open(path, 'r', encoding='utf-8') as sensor_file:
+        vehicle_config = yaml.safe_load(sensor_file)
+        if type(vehicle_config) is not dict:
+            raise ValueError(f"Error parsing {path} as yaml in vehicle_factory. Vehicle configs must be yaml-encoded.")
+
+        return Vehicle.from_dict(vehicle_config)
