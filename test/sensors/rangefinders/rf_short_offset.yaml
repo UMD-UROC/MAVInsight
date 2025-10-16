@@ -1,0 +1,8 @@
+name: Rangefinder (Gimbal)
+frame_name: rangefinder_frame
+offset:
+  - 0.0
+  - 0.0
+range_topic: /uas4/rangefinder
+parent_frame: d4_gimbal_frame
+sensor_type: rangefinder

@@ -1,0 +1,8 @@
+name: Short Offset Camera
+frame_name: short_offset_camera
+offset:
+  - 0.0
+  - 0.0
+cam_info_topic: /short/offset/camera
+parent_frame: link
+sensor_type: camera

@@ -1,0 +1,9 @@
+name: No Topic Gimbal
+frame_name: no_topic_gimbal
+offset:
+  - 1.0
+  - 2.0
+  - 3.0
+parent_frame: link
+sensor_type: gimbal
+sensors: []

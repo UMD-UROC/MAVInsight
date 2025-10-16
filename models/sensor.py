@@ -43,8 +43,8 @@ class Sensor(GraphMember):
         self.sensors = sensors
 
     @classmethod
-    def from_dict(clazz, config_params: dict) -> Sensor:
-        if ("offset" not in config_params.keys()):
+    def from_dict(clazz, config_params: dict) -> Sensor: # TODO: Extract construction logic to allow each level of heirarchy to take care of its own construction issues
+        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
             config_params["offset"] = [0.0,0.0,0.0]
 
         if not clazz._dict_meets_reqs(config_params):
@@ -115,11 +115,17 @@ class Camera(Sensor):
 
     @classmethod
     def from_dict(clazz, config_params:dict):
+        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
+            config_params["offset"] = [0.0,0.0,0.0]
+
         if not clazz._dict_meets_reqs(config_params):
             raise ValueError(f"Not enough params in dict to create Camera. Must have all of: {clazz.param_reqs}")
 
-        if ("offset" not in config_params.keys()):
-            config_params["offset"] = [0.0,0.0,0.0]
+        # parameter checking
+        if len(config_params["offset"]) != 3:
+            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
+        if any([type(val) != float for val in config_params["offset"]]):
+            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
 
         return clazz(cam_info_topic = config_params["cam_info_topic"],
                         frame_name=config_params["frame_name"],
@@ -161,11 +167,17 @@ class Gimbal(Sensor):
 
     @classmethod
     def from_dict(clazz, config_params:dict):
+        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
+            config_params["offset"] = [0.0,0.0,0.0]
+
         if not clazz._dict_meets_reqs(config_params):
             raise ValueError(f"Not enough params in dict to create Gimbal. Must have all of: {clazz.param_reqs}")
 
-        if ("offset" not in config_params.keys()):
-            config_params["offset"] = [0.0,0.0,0.0]
+        # parameter checking
+        if len(config_params["offset"]) != 3:
+            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
+        if any([type(val) != float for val in config_params["offset"]]):
+            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
 
         return clazz(frame_name=config_params["frame_name"],
                         name=config_params["name"],
@@ -208,11 +220,17 @@ class Rangefinder(Sensor):
 
     @classmethod
     def from_dict(clazz, config_params:dict):
+        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
+            config_params["offset"] = [0.0,0.0,0.0]
+
         if not clazz._dict_meets_reqs(config_params):
             raise ValueError(f"Not enough params in dict to create Rangefinder. Must have all of: {clazz.param_reqs}")
 
-        if ("offset" not in config_params.keys()):
-            config_params["offset"] = [0.0,0.0,0.0]
+        # parameter checking
+        if len(config_params["offset"]) != 3:
+            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
+        if any([type(val) != float for val in config_params["offset"]]):
+            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
 
         return clazz(frame_name=config_params["frame_name"],
                         name=config_params["name"],
@@ -230,15 +248,27 @@ class Rangefinder(Sensor):
         return self._format()
 
 def sensor_factory(filename:str) -> Sensor:
-    """Factory for producing a (supported) sensor defined in {TODO: make sensor config folder}"""
-    print(f"Attempting to build sensor from {filename}")
-    path = Path(get_package_share_directory("mavinsight")) / "sensors" / filename
+    """Factory for producing a (supported) sensor defined in mavinsight/sensors/*.yaml."""
+
+    if filename.startswith("_test/"):
+        filename = filename.removeprefix("_test/")
+        filename = Path(__file__).resolve().parent.parent / "test/sensors" / filename
+
+    path = Path(filename)
+    if not path.is_absolute():
+        path = Path(get_package_share_directory("mavinsight")) / "sensors" / path
 
     if not path.is_file():
-        raise ValueError(f"No configs found under {path}")
+        raise FileNotFoundError(f"No configs found under {path}")
 
     with open(path, 'r', encoding='utf-8') as sensor_file:
         sensor_config = yaml.safe_load(sensor_file)
+        if type(sensor_config) is not dict:
+            raise ValueError(f"Error parsing {path} as yaml in sensor_factory. Sensor configs must be yaml-encoded.")
+
+        if 'sensor_type' not in sensor_config:
+            raise ValueError(f"Sensor config file {path} does not contain sensor type parameter.")
+
         match sensor_config["sensor_type"]:
             case SensorTypes.CAMERA.value:
                 return (Camera.from_dict(sensor_config))

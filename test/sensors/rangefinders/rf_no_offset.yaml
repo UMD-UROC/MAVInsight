@@ -1,0 +1,5 @@
+name: test full rangefinder
+frame_name: test_rangefinder
+range_topic: /test/rangefinder
+parent_frame: link
+sensor_type: rangefinder

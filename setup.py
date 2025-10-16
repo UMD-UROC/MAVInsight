@@ -3,8 +3,8 @@ from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'mavinsight'
-vehicle_configs = glob(os.path.join('vehicles','*'))
-sensor_configs = glob(os.path.join('sensors', '*'))
+vehicle_configs = [f for f in glob(os.path.join("vehicles", "**/*"), recursive=True) if os.path.isfile(f)]
+sensor_configs = [f for f in glob(os.path.join("sensors", "**/*"), recursive=True) if os.path.isfile(f)]
 
 setup(
     name=package_name,

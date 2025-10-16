@@ -1,0 +1,8 @@
+name: test full rangefinder
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+range_topic: /test/rangefinder
+parent_frame: link
+sensor_type: rangefinder

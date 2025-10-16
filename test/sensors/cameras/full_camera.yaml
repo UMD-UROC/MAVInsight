@@ -1,0 +1,9 @@
+name: Full test cam
+frame_name: test_cam
+offset:
+  - 9.0
+  - 8.0
+  - 7.6
+cam_info_topic: /test/cam
+parent_frame: link
+sensor_type: camera

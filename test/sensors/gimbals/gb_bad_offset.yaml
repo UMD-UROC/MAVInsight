@@ -1,0 +1,10 @@
+name: Bad Offset Gimbal
+frame_name: bad_offset_gimbal
+offset:
+  - 1.0
+  - 2.0
+  - []
+orientation_topic: /bad/offset/gimbal
+parent_frame: link
+sensor_type: gimbal
+sensors: []

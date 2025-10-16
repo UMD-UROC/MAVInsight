@@ -1,0 +1,8 @@
+name: test full rangefinder
+frame_name: test_rangefinder
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+range_topic: /test/rangefinder
+parent_frame: link

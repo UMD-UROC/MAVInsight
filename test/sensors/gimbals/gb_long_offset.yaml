@@ -1,0 +1,11 @@
+name: Long Offset Gimbal
+frame_name: long_offset_gimbal
+offset:
+  - 1.0
+  - 2.0
+  - 3.0
+  - 5.0
+orientation_topic: /long/offset/gimbal
+parent_frame: link
+sensor_type: gimbal
+sensors: []

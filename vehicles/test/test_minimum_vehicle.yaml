@@ -1,0 +1,4 @@
+name: Minimum Vehicle
+frame_name: wv_base_link
+location_topic: /file/name
+platform: quad

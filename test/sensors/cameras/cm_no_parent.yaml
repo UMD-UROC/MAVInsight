@@ -1,0 +1,8 @@
+name: No Parent Frame Camera
+frame_name: no_parent_cam
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+cam_info_topic: /no/parent/cam
+sensor_type: camera

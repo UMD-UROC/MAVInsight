@@ -35,11 +35,16 @@ class VehicleTfPublisher(Node):
                                         - If included, only vehicles specified in build_list will be built
                                         - If excluded, ALL vehicles in the vehicle directory will be built
         """
+        vehicles = []
         vehicle_dir = Path(get_package_share_directory("mavinsight"))
         if (not build_list) or (len(build_list) == 0):
-            vehicles = [p for p in (vehicle_dir / 'vehicles').iterdir()]
+            vehicles = [path for path in (vehicle_dir / 'vehicles').iterdir()]
         else:
-            vehicles = [vehicle_dir / 'vehicles' / v for v in build_list]
+            for path in build_list:
+                if Path(path).is_absolute():
+                    vehicles.append(path)
+                else:
+                    vehicles.append(vehicle_dir / 'vehicles' / path)
 
         for vehicle_path in vehicles:
             self.get_logger().info(f"Attempting to build Vehicle from: {vehicle_path.name}")
