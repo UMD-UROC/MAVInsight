@@ -42,7 +42,6 @@ class Vehicle(GraphMember):
         self.location_topic = location_topic
         self.platform = platform
         self.sensors = sensors
-        print(f"Successfully built Vehicle: {self.name}")
 
     def check_dict(self, config_params: dict):
         """
@@ -103,6 +102,6 @@ def vehicle_factory(filename:str) -> Vehicle:
     with open(path, 'r', encoding='utf-8') as sensor_file:
         vehicle_config = yaml.safe_load(sensor_file)
         if type(vehicle_config) is not dict:
-            raise ValueError(f"Error parsing {path} as yaml in vehicle_factory. Vehicle configs must be yaml-encoded.")
+            raise TypeError(f"Error parsing {path} as yaml in vehicle_factory. Vehicle configs must be yaml-encoded.")
 
         return Vehicle.from_dict(vehicle_config)

@@ -1,15 +1,13 @@
 # Python imports
-import yaml
 from pathlib import Path
 
-# ROS imports 
+# ROS imports
 import rclpy
 from ament_index_python import get_package_share_directory
 from rclpy.node import Node
-from std_msgs.msg import String
 
 # MAVInsight imports
-from models.vehicle import Vehicle
+from models.vehicle import Vehicle, vehicle_factory
 
 class VehicleTfPublisher(Node):
     """The TF Publisher for Vehicles described in mavinsight/vehicles/*"""
@@ -38,26 +36,18 @@ class VehicleTfPublisher(Node):
         vehicles = []
         vehicle_dir = Path(get_package_share_directory("mavinsight"))
         if (not build_list) or (len(build_list) == 0):
-            vehicles = [path for path in (vehicle_dir / 'vehicles').iterdir()]
+            vehicles = [path.as_posix() for path in (vehicle_dir / 'vehicles').iterdir()]
         else:
-            for path in build_list:
-                if Path(path).is_absolute():
-                    vehicles.append(path)
-                else:
-                    vehicles.append(vehicle_dir / 'vehicles' / path)
+            vehicles = build_list
 
         for vehicle_path in vehicles:
-            self.get_logger().info(f"Attempting to build Vehicle from: {vehicle_path.name}")
-            if vehicle_path.is_file():
-                try:
-                    with open(vehicle_path, 'r', encoding='utf-8') as v:
-                        self.vehicles.append(Vehicle.from_dict(yaml.safe_load(v)))
-                except (FileNotFoundError, PermissionError, IsADirectoryError, OSError) as e:
-                    self.get_logger().error(f"Error reading file {vehicle_path}: {e}")
-                except (ValueError) as e:
-                    self.get_logger().warn(f"Error while building vehicle from file: {vehicle_path.name}: {e}")
-            else:
-                self.get_logger().warn(f"\"{vehicle_path.name}\" not recognized as vehicle configuration file")
+            self.get_logger().info(f"Attempting to build Vehicle from: {vehicle_path}")
+            try:
+                self.vehicles.append(vehicle_factory(vehicle_path))
+            except (FileNotFoundError, PermissionError, IsADirectoryError, OSError, TypeError) as e:
+                self.get_logger().error(f"Error reading file {vehicle_path}: {e}")
+            except (ValueError) as e:
+                self.get_logger().warn(f"Error while building vehicle from file: {vehicle_path}: {e}")
 
 def main(args=None):
     rclpy.init(args=args)

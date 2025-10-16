@@ -276,7 +276,7 @@ def sensor_factory(filename:str) -> Sensor:
     with open(path, 'r', encoding='utf-8') as sensor_file:
         sensor_config = yaml.safe_load(sensor_file)
         if type(sensor_config) is not dict:
-            raise ValueError(f"Error parsing {path} as yaml in sensor_factory. Sensor configs must be yaml-encoded.")
+            raise TypeError(f"Error parsing {path} as yaml in sensor_factory. Sensor configs must be yaml-encoded.")
 
         if 'sensor_type' not in sensor_config:
             raise ValueError(f"Sensor config file {path} does not contain sensor type parameter.")
