@@ -11,7 +11,7 @@ class Vehicle(GraphMember):
     ----------------
     param_reqs : list[str]
         A list of required parameters/keys that a dict-encoded version of a `Vehicle` would need
-        to be considered "valid". Inherited from `GraphMember` and extended.
+        to be considered "valid".
 
     Attributes
     ----------
@@ -26,7 +26,7 @@ class Vehicle(GraphMember):
     platform: Platforms
     sensors: list[Sensor]
 
-    param_reqs:list[str] = GraphMember.param_reqs + ["location_topic", "parent_frame", "platform"]
+    param_reqs:list[str] = ["location_topic", "platform"]
 
     # Constructors
     def __init__(self, name:str=None, frame_name:str=None, location_topic:str=None, parent_frame:str="map", platform:Platforms=None, sensors:list[Sensor]=[]):
@@ -35,25 +35,21 @@ class Vehicle(GraphMember):
         self.location_topic = location_topic
         self.platform = platform
         self.sensors = sensors
-        self.param_reqs = self.param_reqs + self.param_reqs
         print(f"Successfully built Vehicle: {self.name}")
 
-    @classmethod
-    def from_dict(clazz, config_params: dict) -> Vehicle:
-        # fill in a default parent frame, if none other is specified for a vehicle
+    def check_dict(self, config_params: dict):
         if ("parent_frame" not in config_params.keys()):
             config_params["parent_frame"] = "map"
 
         # check for required Vehicle Params
-        if not clazz._dict_meets_reqs(config_params):
-            raise ValueError(f"Not enough params in dict to create Vehicle. Must have all of: {clazz.param_reqs}")
+        if not set(Vehicle.param_reqs).issubset(set(config_params.keys())):
+            raise ValueError(f"Not enough params in dict to create Vehicle. Must have all of: {Vehicle.param_reqs}")
 
-        return clazz(name=config_params["name"],
-                        frame_name=config_params["frame_name"],
-                        location_topic=config_params["location_topic"],
-                        parent_frame=config_params["parent_frame"],
-                        platform=Platforms(config_params["platform"]),
-                        sensors=Sensor._make_from_file_list(config_params.get("sensors", [])))
+        self.location_topic = config_params["location_topic"]
+        self.platform = Platforms(config_params["platform"])
+        self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
+
+        super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0) -> str:
         t1 = self.tab_char * tab_depth

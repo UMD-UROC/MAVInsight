@@ -17,7 +17,7 @@ class Sensor(GraphMember):
     ----------------
     param_reqs : list[str]
         A list of required parameters/keys that a dict-encoded version of a `Sensor` would need
-        to be considered "valid". Inherited from `GraphMember` and extended.
+        to be considered "valid".
 
     Attributes
     ----------
@@ -32,7 +32,7 @@ class Sensor(GraphMember):
     sensor_type: SensorTypes
     sensors: list[Sensor]
 
-    param_reqs = GraphMember.param_reqs + ["offset", "sensor_type"]
+    param_reqs = ["offset", "sensor_type"]
 
     # Constructors
     def __init__(self, frame_name:str=None, name:str=None, offset:list[float]=[0.0,0.0,0.0], parent_frame:str=None, sensor_type:SensorTypes=None, sensors:list[Sensor]=[]):
@@ -42,13 +42,12 @@ class Sensor(GraphMember):
         self.sensor_type = sensor_type
         self.sensors = sensors
 
-    @classmethod
-    def from_dict(clazz, config_params: dict) -> Sensor: # TODO: Extract construction logic to allow each level of heirarchy to take care of its own construction issues
+    def check_dict(self, config_params):
         if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
             config_params["offset"] = [0.0,0.0,0.0]
 
-        if not clazz._dict_meets_reqs(config_params):
-            raise ValueError(f"Not enough params in dict to create Vehicle. Must have all of: {clazz.param_reqs}")
+        if not set(Sensor.param_reqs).issubset(set(config_params.keys())):
+            raise ValueError(f"Not enough params in dict to create Sensor. Must have all of: {Sensor.param_reqs}")
 
         # parameter checking
         if len(config_params["offset"]) != 3:
@@ -56,12 +55,11 @@ class Sensor(GraphMember):
         if any([type(val) != float for val in config_params["offset"]]):
             raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
 
-        return clazz(name=config_params["name"],
-                        frame_name=config_params["frame_name"],
-                        offset=config_params["offset"],
-                        parent_frame=config_params["parent_frame"],
-                        sensor_type=SensorTypes(config_params["sensor_type"]),
-                        sensors=Sensor._make_from_file_list(config_params.get("sensors", [])))
+        self.offset = config_params["offset"]
+        self.sensor_type = SensorTypes(config_params["sensor_type"])
+        self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
+
+        super().check_dict(config_params)
 
     @staticmethod
     def _make_from_file_list(file_list:list[str]) -> list[Sensor]:
@@ -96,7 +94,7 @@ class Camera(Sensor):
     ----------------
     param_reqs : list[str]
         A list of required parameters/keys that a dict-encoded version of a `Camera` would need
-        to be considered "valid". Inherited from `Sensor` and extended.
+        to be considered "valid".
 
     Attributes
     ----------
@@ -105,7 +103,7 @@ class Camera(Sensor):
     """
     cam_info_topic: str
 
-    param_reqs: list[str] = Sensor.param_reqs + ["cam_info_topic"]
+    param_reqs: list[str] = ["cam_info_topic"]
 
     # Constructors
     def __init__(self, cam_info_topic:str=None, frame_name:str=None, name:str=None, offset:list[float]=[0.0, 0.0, 0.0], parent_frame:str=None, sensor_type:SensorTypes=None):
@@ -113,26 +111,13 @@ class Camera(Sensor):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
         self.cam_info_topic = cam_info_topic
 
-    @classmethod
-    def from_dict(clazz, config_params:dict):
-        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
-            config_params["offset"] = [0.0,0.0,0.0]
+    def check_dict(self, config_params):
+        if not set(Camera.param_reqs).issubset(set(config_params.keys())):
+            raise ValueError(f"Not enough params in dict to create Camera. Must have all of: {Camera.param_reqs}")
 
-        if not clazz._dict_meets_reqs(config_params):
-            raise ValueError(f"Not enough params in dict to create Camera. Must have all of: {clazz.param_reqs}")
+        self.cam_info_topic = config_params["cam_info_topic"]
 
-        # parameter checking
-        if len(config_params["offset"]) != 3:
-            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
-        if any([type(val) != float for val in config_params["offset"]]):
-            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
-
-        return clazz(cam_info_topic = config_params["cam_info_topic"],
-                        frame_name=config_params["frame_name"],
-                        name=config_params["name"],
-                        offset=config_params["offset"],
-                        parent_frame=config_params["parent_frame"],
-                        sensor_type=SensorTypes(config_params["sensor_type"]))
+        super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t = self.tab_char * (tab_depth + 1)
@@ -149,7 +134,7 @@ class Gimbal(Sensor):
     ----------------
     param_reqs : list[str]
         A list of required parameters/keys that a dict-encoded version of a `Gimbal` would need
-        to be considered "valid". Inherited from `Sensor` and extended.
+        to be considered "valid".
 
     Attributes
     ----------
@@ -158,34 +143,21 @@ class Gimbal(Sensor):
     """
     orientation_topic: str
 
-    param_reqs: list[str] = Sensor.param_reqs + ["orientation_topic"]
+    param_reqs: list[str] = ["orientation_topic"]
 
     # Constructors
     def __init__(self, frame_name:str = None, name:str = None, offset:list[float] = [0.0, 0.0, 0.0], orientation_topic:str = None, parent_frame:str = None, sensor_type:SensorTypes = None, sensors:list[str] = []):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type, sensors=sensors)
         self.orientation_topic = orientation_topic
 
-    @classmethod
-    def from_dict(clazz, config_params:dict):
-        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
-            config_params["offset"] = [0.0,0.0,0.0]
+    def check_dict(self, config_params):
+        if not set(Gimbal.param_reqs).issubset(set(config_params.keys())):
+            raise ValueError(f"Not enough params in dict to create Gimbal. Must have all of: {Gimbal.param_reqs}")
 
-        if not clazz._dict_meets_reqs(config_params):
-            raise ValueError(f"Not enough params in dict to create Gimbal. Must have all of: {clazz.param_reqs}")
+        self.orientation_topic = config_params["orientation_topic"]
+        self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
 
-        # parameter checking
-        if len(config_params["offset"]) != 3:
-            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
-        if any([type(val) != float for val in config_params["offset"]]):
-            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
-
-        return clazz(frame_name=config_params["frame_name"],
-                        name=config_params["name"],
-                        offset=config_params["offset"],
-                        orientation_topic=config_params["orientation_topic"],
-                        parent_frame=config_params["parent_frame"],
-                        sensor_type=SensorTypes(config_params["sensor_type"]),
-                        sensors=Sensor._make_from_file_list(config_params.get("sensors", [])))
+        super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t = self.tab_char * (tab_depth + 1)
@@ -202,7 +174,7 @@ class Rangefinder(Sensor):
     ----------------
     param_reqs : list[str]
         A list of required parameters/keys that a dict-encoded version of a `Rangefinder` would need
-        to be considered "valid". Inherited from `Sensor` and extended.
+        to be considered "valid".
 
     Attributes
     ----------
@@ -211,33 +183,20 @@ class Rangefinder(Sensor):
     """
     range_topic: str
 
-    param_reqs: list[str] = Sensor.param_reqs + ["range_topic"]
+    param_reqs: list[str] = ["range_topic"]
 
     # Constructors
     def __init__(self, frame_name:str = None, name:str = None, offset:list[float, float, float]=[0.0,0.0,0.0], parent_frame:str = None, range_topic:str = None, sensor_type:SensorTypes = None):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
         self.range_topic = range_topic
 
-    @classmethod
-    def from_dict(clazz, config_params:dict):
-        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
-            config_params["offset"] = [0.0,0.0,0.0]
+    def check_dict(self, config_params):
+        if not set(Rangefinder.param_reqs).issubset(set(config_params.keys())):
+            raise ValueError(f"Not enough params in dict to create Rangefinder. Must have all of: {Rangefinder.param_reqs}")
 
-        if not clazz._dict_meets_reqs(config_params):
-            raise ValueError(f"Not enough params in dict to create Rangefinder. Must have all of: {clazz.param_reqs}")
+        self.range_topic = config_params["range_topic"]
 
-        # parameter checking
-        if len(config_params["offset"]) != 3:
-            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
-        if any([type(val) != float for val in config_params["offset"]]):
-            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
-
-        return clazz(frame_name=config_params["frame_name"],
-                        name=config_params["name"],
-                        offset=config_params["offset"],
-                        parent_frame=config_params["parent_frame"],
-                        sensor_type=SensorTypes(config_params["sensor_type"]),
-                        range_topic=config_params["range_topic"])
+        super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t = self.tab_char * (tab_depth + 1)

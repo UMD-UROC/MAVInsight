@@ -32,17 +32,21 @@ class GraphMember:
         self.parent_frame = parent_frame
         self.tab_char = "|   "
 
+    def check_dict(self, config_params:dict):
+        if not set(GraphMember.param_reqs).issubset(set(config_params.keys())):
+            raise ValueError(f"Not enough params in dict to create GraphMember. Must have all of: {GraphMember.param_reqs}")
+
+        self.name = config_params["name"]
+        self.frame_name = config_params["frame_name"]
+        self.parent_frame=config_params["parent_frame"]
+
     @classmethod
     def from_dict(clazz, config_params:dict):
-        # check for required Graph Member params
-        if not clazz._dict_meets_reqs:
-            raise ValueError(f"Not enough params in dict to create GraphMember. Must have all of: {clazz.param_reqs}")
+        g_member = clazz()
 
-        return clazz(name=config_params["name"], frame_name=config_params["frame_name"], parent_frame=config_params["frame_name"])
+        g_member.check_dict(config_params)
 
-    @classmethod
-    def _dict_meets_reqs(clazz, param_dict: dict):
-        return set(clazz.param_reqs).issubset(set(param_dict.keys()))
+        return g_member
 
     def __str__(self):
         return f"{self.name}\nTransform: {self.parent_frame} -> {self.frame_name}\n"

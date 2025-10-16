@@ -20,7 +20,7 @@ class TestFileIO(unittest.TestCase):
         self.full_rangefinder:Rangefinder = sensor_factory(os.path.join(self.rf_dir, "full_rangefinder.yaml"))
 
     def test_sensor_factory(self):
-        """Test that sensor factory can detect and make different sensor types from files"""
+        """sensor factory correctly makes types from yamls"""
         self.assertRaises(FileNotFoundError, sensor_factory, "not_a_file")
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.sensor_dir, "no_sensortype.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.sensor_dir, "bad_sensortype.yaml"))
@@ -30,7 +30,7 @@ class TestFileIO(unittest.TestCase):
         self.assertIsInstance(self.full_rangefinder, Rangefinder)
 
     def test_rangefinder_from_yaml(self):
-        """Test rangefinder creation logic"""
+        """rangefinder creation from yaml"""
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.rf_dir, "rf_no_name.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.rf_dir, "rf_no_frame.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.rf_dir, "rf_no_parent.yaml"))
@@ -59,7 +59,7 @@ class TestFileIO(unittest.TestCase):
         self.assertEqual(self.full_rangefinder.sensor_type, SensorTypes.RANGEFINDER)
 
     def test_camera_from_yaml(self):
-        """Test camera creation logic"""
+        """camera creation from yaml"""
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_name.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_frame.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_parent.yaml"))
@@ -88,7 +88,7 @@ class TestFileIO(unittest.TestCase):
         self.assertEqual(self.full_camera.sensor_type, SensorTypes.CAMERA)
 
     def test_gimbal_from_yaml(self):
-        """Test gimbal creation logic"""
+        """gimbal creation from yaml"""
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_name.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_frame.yaml"))
         self.assertRaises(ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_parent.yaml"))
