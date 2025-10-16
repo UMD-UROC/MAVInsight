@@ -7,6 +7,6 @@ offset:
 orientation_topic: /test/gimbal
 parent_frame: link
 sensor_type: gimbal
-sensors: 
+sensors:
   - _test/sensors/cameras/full_camera.yaml
   - _test/sensors/rangefinders/full_rangefinder.yaml
