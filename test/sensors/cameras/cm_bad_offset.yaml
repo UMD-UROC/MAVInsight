@@ -1,0 +1,9 @@
+name: Bad Camera Offset
+frame_name: canera_frame
+offset:
+  - no offset
+  - 0.0
+  - 0.0
+camera_info_topic: /bad/camera/offset
+parent_frame: link
+sensor_type: camera

@@ -1,0 +1,9 @@
+name: Downward-Facing Camera (D4)
+frame_name: d4_dcam
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+cam_info_topic: /uas4/dcam_info
+parent_frame: d4_base_link
+sensor_type: camera

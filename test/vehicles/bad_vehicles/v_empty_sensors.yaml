@@ -1,0 +1,6 @@
+name: Vehicle Empty Sensors
+frame_name: empty_sensors_link
+location_topic: "/empty/sensors/fix"
+parent_frame: empty_sensor_parent
+platform: quad
+sensors: []

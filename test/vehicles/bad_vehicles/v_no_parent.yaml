@@ -1,0 +1,5 @@
+name: Vehicle No Parent
+frame_name: no_parent_link
+location_topic: "/no/parent/fix"
+platform: quad
+sensors: []

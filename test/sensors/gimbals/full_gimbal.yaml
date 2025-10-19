@@ -1,0 +1,12 @@
+name: Full Gimbal
+frame_name: full_gimbal
+offset:
+  - 0.01
+  - 0.002
+  - 0.0003
+orientation_topic: /test/gimbal
+parent_frame: link
+sensor_type: gimbal
+sensors:
+  - _test/sensors/cameras/full_camera.yaml
+  - _test/sensors/rangefinders/full_rangefinder.yaml

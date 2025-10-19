@@ -1,0 +1,5 @@
+name: No Offset Camera
+frame_name: no_offset_cam
+cam_info_topic: /no/offset/cam
+parent_frame: link
+sensor_type: camera

@@ -1,0 +1,9 @@
+name: None in Offset Camera
+frame_name: none_in_offset_camera
+offset:
+  - 0.0
+  -
+  - 0.0
+range_topic: //none/offset/camera
+parent_frame: link
+sensor_type: camera

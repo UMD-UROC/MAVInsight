@@ -1,0 +1,8 @@
+name: No Type Camera
+frame_name: no_type_cam
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+cam_info_topic: /no/type/cam
+parent_frame: link

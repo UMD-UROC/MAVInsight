@@ -1,0 +1,9 @@
+name: No Parent Frame Gimbal
+frame_name: no_parent_gimbal
+offset:
+  - 1.0
+  - 2.0
+  - 3.0
+orientation_topic: /test/gimbal
+sensor_type: gimbal
+sensors: []

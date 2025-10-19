@@ -1,0 +1,8 @@
+name: No Topic Camera
+frame_name: no_topic_cam
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+parent_frame: link
+sensor_type: camera

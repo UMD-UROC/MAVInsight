@@ -1,0 +1,8 @@
+name: No Sensor Type
+frame_name: no
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+range_topic: /no/type
+parent_frame: map

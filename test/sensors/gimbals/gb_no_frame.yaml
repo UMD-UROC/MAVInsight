@@ -1,0 +1,9 @@
+name: No Frame Gimbal
+offset:
+  - 1.0
+  - 2.0
+  - 3.0
+orientation_topic: /no/frame/gimbal
+parent_frame: link
+sensor_type: gimbal
+sensors: []

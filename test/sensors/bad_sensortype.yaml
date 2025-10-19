@@ -1,0 +1,9 @@
+name: Bad Sensor Type
+frame_name: bad
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+range_topic: /bad/type
+parent_frame: map
+sensor_type: notasensortype

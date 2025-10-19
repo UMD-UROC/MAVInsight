@@ -1,0 +1,7 @@
+name: Empty Offset Gimbal
+frame_name: empty_offset_gimbal
+offset: []
+orientation_topic: /empty/offset/gimbal
+parent_frame: link
+sensor_type: gimbal
+sensors: []

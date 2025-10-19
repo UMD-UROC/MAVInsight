@@ -1,0 +1,9 @@
+name: Short Offset Gimbal
+frame_name: short_offset_gimbal
+offset:
+  - 1.0
+  - 2.0
+orientation_topic: /short/offset/gimbal
+parent_frame: link
+sensor_type: gimbal
+sensors: []

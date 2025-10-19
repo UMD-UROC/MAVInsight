@@ -1,0 +1,10 @@
+name: Long Offset Camera
+frame_name: test_cam
+offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+cam_info_topic: /long/offset/cam
+parent_frame: link
+sensor_type: camera
