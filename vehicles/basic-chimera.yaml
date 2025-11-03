@@ -1,0 +1,5 @@
+name: Basic Chimera
+frame_name: basic_base_link
+location_topic: "/local"
+parent_frame: map
+platform: quad
