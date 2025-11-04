@@ -1,7 +1,9 @@
 # MAVInsight
+
 The `mavinsight` package is a ROS2 Package configured to build a model of a Vehicle for later visualization in Foxglove.
 
 ## Package Structure
+
 - `MAVInsight/` - This repo.
   - `mavinsight/` - Source directory for the Nodes of this repo.
     - `vehicle_tf_publisher.py` - The Node that will publish transforms between frames based on the the relationships between `Vehicles` and `Sensors`.
@@ -18,8 +20,10 @@ The `mavinsight` package is a ROS2 Package configured to build a model of a Vehi
   - `vehicles/` - Directory for the config files that define an instance of a `Vehicle`.
 
 ## Config File Specifications
+
 To define a new `Vehicle` or `Sensor` for vizualization, you have to write a new `.yaml` file in either `vehicles/` or `sensors/` (respectively).
 The general format of a configuration file should be:
+
 ```config.yaml
 property: value
 list_property:
