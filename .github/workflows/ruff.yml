@@ -1,0 +1,94 @@
+name: Ruff Format and Lint
+
+on:
+  push:
+    branches: [ '*' ]
+    paths:
+      - '**.py'
+      - '**.pyi'
+  pull_request:
+    branches: [ '*' ]
+    paths:
+      - '**.py'
+      - '**.pyi'
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Ruff
+        run: pip install ruff==0.14.3
+
+      - name: Check for changes in supported files
+        id: file-changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, check against the base branch
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            # For pushes, check against the previous commit
+            # Handle case where before might be empty (first commit)
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              # First commit or empty before, use HEAD~1 or HEAD
+              BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+            fi
+          fi
+          
+          # Check if any Python or ruff-supported files changed
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" 2>/dev/null | grep -E '\.(py|pyi)$' || true)
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No Python files changed, skipping Ruff"
+          fi
+
+      - name: Run Ruff Check (with auto-fix and import sorting)
+        if: steps.file-changes.outputs.has_changes == 'true'
+        run: |
+          ruff check --fix --select I .
+
+      - name: Run Ruff Format
+        if: steps.file-changes.outputs.has_changes == 'true'
+        run: |
+          ruff format .
+
+      - name: Check for changes after Ruff
+        if: steps.file-changes.outputs.has_changes == 'true'
+        id: verify-changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes_detected=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit changes
+        if: steps.file-changes.outputs.has_changes == 'true' && steps.verify-changes.outputs.changes_detected == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Apply Ruff formatting and import sorting [skip ci]"
+          git push
+
