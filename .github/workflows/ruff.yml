@@ -66,12 +66,12 @@ jobs:
       - name: Run Ruff Check (with auto-fix and import sorting)
         if: steps.file-changes.outputs.has_changes == 'true'
         run: |
-          ruff check --fix --select I .
+          ruff check --fix --select I $CHANGED_FILES
 
       - name: Run Ruff Format
         if: steps.file-changes.outputs.has_changes == 'true'
         run: |
-          ruff format .
+          ruff format $CHANGED_FILES
 
       - name: Check for changes after Ruff
         if: steps.file-changes.outputs.has_changes == 'true'
