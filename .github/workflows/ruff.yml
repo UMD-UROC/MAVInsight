@@ -88,7 +88,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add .
+          git add '*.py' '*.pyi'
           git commit -m "Apply Ruff formatting and import sorting [skip ci]"
           git push
 
