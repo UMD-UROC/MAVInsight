@@ -83,12 +83,39 @@ jobs:
             echo "changes_detected=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit changes
+      - name: Check if branch is protected
         if: steps.file-changes.outputs.has_changes == 'true' && steps.verify-changes.outputs.changes_detected == 'true'
+        id: check-branch
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          # List of protected branches
+          PROTECTED_BRANCHES="main master production prod release"
+          
+          IS_PROTECTED=false
+          for protected in $PROTECTED_BRANCHES; do
+            if [ "$BRANCH_NAME" = "$protected" ]; then
+              IS_PROTECTED=true
+              break
+            fi
+          done
+          
+          echo "is_protected=$IS_PROTECTED" >> $GITHUB_OUTPUT
+          echo "Branch: $BRANCH_NAME"
+          echo "Is protected: $IS_PROTECTED"
+
+      - name: Commit changes
+        if: steps.file-changes.outputs.has_changes == 'true' && steps.verify-changes.outputs.changes_detected == 'true' && steps.check-branch.outputs.is_protected == 'false'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add '*.py' '*.pyi'
           git commit -m "Apply Ruff formatting and import sorting [skip ci]"
           git push
+
+      - name: Fail on protected branch with changes
+        if: steps.file-changes.outputs.has_changes == 'true' && steps.verify-changes.outputs.changes_detected == 'true' && steps.check-branch.outputs.is_protected == 'true'
+        run: |
+          echo "::error::Ruff formatting/linting changes detected on protected branch '${{ github.ref_name }}'"
+          echo "::error::Please run 'ruff format' and 'ruff check --fix --select I' locally and commit the changes"
+          exit 1
 
