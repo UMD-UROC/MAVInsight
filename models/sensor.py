@@ -1,6 +1,7 @@
 # python imports
 from __future__ import annotations
 from pathlib import Path
+from typing import Optional
 import yaml
 
 # ROS2 imports
@@ -28,14 +29,14 @@ class Sensor(GraphMember):
     sensors : list[Sensor]
         A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
     """
-    offset: list[float, float, float]
-    sensor_type: SensorTypes
+    offset: list[float]
+    sensor_type: Optional[SensorTypes]
     sensors: list[Sensor]
 
     param_reqs = ["offset", "sensor_type"]
 
     # Constructors
-    def __init__(self, frame_name:str=None, name:str=None, offset:list[float]=[0.0,0.0,0.0], parent_frame:str=None, sensor_type:SensorTypes=None, sensors:list[Sensor]=[]):
+    def __init__(self, frame_name:Optional[str]=None, name:Optional[str]=None, offset:list[float]=[0.0,0.0,0.0], parent_frame:Optional[str]=None, sensor_type:Optional[SensorTypes]=None, sensors:list[Sensor]=[]):
         """Basic Sensor constructor, no error/input checking/scrubbing"""
         super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
         self.offset = offset
@@ -96,6 +97,8 @@ class Sensor(GraphMember):
         return s
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        assert self.tab_char is not None, "Cannot display null tab char"
+        assert self.sensor_type is not None, "Cannot display null sensor type"
         t1 = self.tab_char * tab_depth
         t2 = t1 + self.tab_char
         sensors_string = "[]" if len(self.sensors) == 0 else "\n"
@@ -125,12 +128,12 @@ class Camera(Sensor):
     cam_info_topic : str
         The str name of the topic carrying the camera info.
     """
-    cam_info_topic: str
+    cam_info_topic: Optional[str]
 
     param_reqs: list[str] = ["cam_info_topic"]
 
     # Constructors
-    def __init__(self, cam_info_topic:str=None, frame_name:str=None, name:str=None, offset:list[float]=[0.0, 0.0, 0.0], parent_frame:str=None, sensor_type:SensorTypes=None):
+    def __init__(self, cam_info_topic:Optional[str]=None, frame_name:Optional[str]=None, name:Optional[str]=None, offset:list[float]=[0.0, 0.0, 0.0], parent_frame:Optional[str]=None, sensor_type:Optional[SensorTypes]=None):
         """Basic Camera constructor, no error/input checking/scrubbing"""
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
         self.cam_info_topic = cam_info_topic
@@ -152,6 +155,7 @@ class Camera(Sensor):
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        assert self.tab_char is not None, "Cannot display null tab char"
         t = self.tab_char * (tab_depth + 1)
         camera_fields = f"{t}Camera info topic: {self.cam_info_topic}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
@@ -173,12 +177,12 @@ class Gimbal(Sensor):
     orientation_topic : str
         The str name of the topic carrying the gimbal orientation data.
     """
-    orientation_topic: str
+    orientation_topic: Optional[str]
 
     param_reqs: list[str] = ["orientation_topic"]
 
     # Constructors
-    def __init__(self, frame_name:str = None, name:str = None, offset:list[float] = [0.0, 0.0, 0.0], orientation_topic:str = None, parent_frame:str = None, sensor_type:SensorTypes = None, sensors:list[str] = []):
+    def __init__(self, frame_name:Optional[str] = None, name:Optional[str] = None, offset:list[float] = [0.0, 0.0, 0.0], orientation_topic:Optional[str] = None, parent_frame:Optional[str] = None, sensor_type:Optional[SensorTypes] = None, sensors:list[Sensor] = []):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type, sensors=sensors)
         self.orientation_topic = orientation_topic
 
@@ -200,6 +204,7 @@ class Gimbal(Sensor):
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        assert self.tab_char is not None, "Cannot display null tab char"
         t = self.tab_char * (tab_depth + 1)
         gimbal_fields = f"{t}Orientation topic: {self.orientation_topic}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=gimbal_fields)
@@ -221,12 +226,12 @@ class Rangefinder(Sensor):
     range_topic : str
         The name of the topic carrying the range info.
     """
-    range_topic: str
+    range_topic: Optional[str]
 
     param_reqs: list[str] = ["range_topic"]
 
     # Constructors
-    def __init__(self, frame_name:str = None, name:str = None, offset:list[float, float, float]=[0.0,0.0,0.0], parent_frame:str = None, range_topic:str = None, sensor_type:SensorTypes = None):
+    def __init__(self, frame_name:Optional[str] = None, name:Optional[str] = None, offset:list[float]=[0.0,0.0,0.0], parent_frame:Optional[str] = None, range_topic:Optional[str] = None, sensor_type:Optional[SensorTypes] = None):
         super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
         self.range_topic = range_topic
 
@@ -247,6 +252,7 @@ class Rangefinder(Sensor):
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+        assert self.tab_char is not None, "Cannot display null tab char"
         t = self.tab_char * (tab_depth + 1)
         rangefinder_fields = f"{t}Range topic: {self.range_topic}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
@@ -261,7 +267,7 @@ def sensor_factory(filename:str) -> Sensor:
     # regardless of abs path to this package
     if filename.startswith("_test/"):
         filename = filename.removeprefix("_test/")
-        filename = Path(__file__).resolve().parent.parent / "test" / filename
+        filename = (Path(__file__).resolve().parent.parent / "test" / filename).as_posix()
 
     # assume the node is looking for the name of a sensor config found in the shared config
     # directory of this ROS package

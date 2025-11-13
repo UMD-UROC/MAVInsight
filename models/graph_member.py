@@ -1,3 +1,5 @@
+# python imports
+from typing import Optional
 class GraphMember:
     """The base class for all objects that could be displayed in the 3D panel of Foxglove
 
@@ -18,15 +20,15 @@ class GraphMember:
     tab_char : str
         The desired "tab" string. Used during string formatting of GraphMember and its subclasses
     """
-    frame_name:str
-    name:str
-    parent_frame:str
-    tab_char:str
+    frame_name:Optional[str]
+    name:Optional[str]
+    parent_frame:Optional[str]
+    tab_char:Optional[str]
 
     param_reqs:list[str] = ["frame_name", "name", "parent_frame"]
 
     # Constructors
-    def __init__(self, name:str=None, frame_name:str=None, parent_frame:str=None):
+    def __init__(self, name:Optional[str]=None, frame_name:Optional[str]=None, parent_frame:Optional[str]=None):
         self.frame_name = frame_name
         self.name = name
         self.parent_frame = parent_frame
@@ -48,8 +50,8 @@ class GraphMember:
         self.parent_frame=config_params["parent_frame"]
 
     @classmethod
-    def from_dict(clazz, config_params:dict):
-        g_member = clazz()
+    def from_dict(cls, config_params:dict):
+        g_member = cls()
 
         g_member.check_dict(config_params)
 

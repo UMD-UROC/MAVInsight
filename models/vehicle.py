@@ -1,6 +1,7 @@
 # python imports
 from __future__ import annotations
 from pathlib import Path
+from typing import Optional
 import yaml
 
 # ROS2 imports
@@ -29,14 +30,14 @@ class Vehicle(GraphMember):
     sensors : list[Sensor]
         A list of `Sensors` attached to this vehicle.
     """
-    location_topic: str
-    platform: Platforms
+    location_topic: Optional[str]
+    platform: Optional[Platforms]
     sensors: list[Sensor]
 
     param_reqs:list[str] = ["location_topic", "platform"]
 
     # Constructors
-    def __init__(self, name:str=None, frame_name:str=None, location_topic:str=None, parent_frame:str="map", platform:Platforms=None, sensors:list[Sensor]=[]):
+    def __init__(self, name:Optional[str]=None, frame_name:Optional[str]=None, location_topic:Optional[str]=None, parent_frame:str="map", platform:Optional[Platforms]=None, sensors:list[Sensor]=[]):
         """Basic Vehicle constructor. No error/input checking/scrubbing."""
         super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
         self.location_topic = location_topic
@@ -67,6 +68,8 @@ class Vehicle(GraphMember):
         super().check_dict(config_params)
 
     def _format(self, tab_depth:int=0) -> str:
+        assert self.tab_char is not None, "Cannot display Null tab character"
+        assert self.platform is not None, "Cannot display Null platform"
         t1 = self.tab_char * tab_depth
         t2 = t1 + self.tab_char
         sensors_string = "[]" if len(self.sensors) == 0 else "\n"
@@ -88,7 +91,7 @@ def vehicle_factory(filename:str) -> Vehicle:
     # regardless of abs path to this package
     if filename.startswith("_test/"):
         filename = filename.removeprefix("_test/")
-        filename = Path(__file__).resolve().parent.parent / "test/vehicles" / filename
+        filename = (Path(__file__).resolve().parent.parent / "test/vehicles" / filename).as_posix()
 
     # assume the node is looking for the name of a vehicle config found in the shared config
     # directory of this ROS package
