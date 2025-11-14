@@ -33,8 +33,6 @@ class Sensor(GraphMember):
     SENSOR_TYPE: SensorTypes
     SENSORS: list[str]
 
-    param_reqs = ["offset", "sensor_type"]
-
     # Constructors
     def __init__(self, node_name):
         super().__init__(node_name)
@@ -99,36 +97,23 @@ class Camera(Sensor):
     cam_info_topic : str
         The str name of the topic carrying the camera info.
     """
-    cam_info_topic: Optional[str]
-
-    param_reqs: list[str] = ["cam_info_topic"]
+    CAM_INFO_TOPIC: Optional[str]
 
     # Constructors
-    def __init__(self, cam_info_topic:Optional[str]=None, frame_name:Optional[str]=None, name:Optional[str]=None, offset:list[float]=[0.0, 0.0, 0.0], parent_frame:Optional[str]=None, sensor_type:Optional[SensorTypes]=None):
-        """Basic Camera constructor, no error/input checking/scrubbing"""
-        super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
-        self.cam_info_topic = cam_info_topic
+    def __init__(self, node_name):
+        super().__init__(node_name)
+        self.get_logger().info("Ingesting Camera params...")
 
-    def check_dict(self, config_params):
-        """
-        A faux-constructor. Used to offload the parameter checking of a dict-encoded
-        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
-        and its subclasses.
-        """
-        # check for required Camera params
-        if not set(Camera.param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params in dict to create Camera. Must have all of: {Camera.param_reqs}")
-
-        # set Camera params
-        self.cam_info_topic = config_params["cam_info_topic"]
-
-        # let the super class check its own params
-        super().check_dict(config_params)
+        # Ingest ROS parameters. Notify user when defaults are being used
+        if self.has_parameter('cam_info_topic'):
+            self.CAM_INFO_TOPIC = self.get_parameter('cam_info_topic').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("cam_info_topic")
+            self.CAM_INFO_TOPIC = "camera_info"
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        assert self.tab_char is not None, "Cannot display null tab char"
-        t = self.tab_char * (tab_depth + 1)
-        camera_fields = f"{t}Camera info topic: {self.cam_info_topic}\n" + extra_fields
+        t = self._tab_char * (tab_depth + 1)
+        camera_fields = f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
 
     def __str__(self):
