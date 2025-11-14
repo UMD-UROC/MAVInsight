@@ -169,35 +169,23 @@ class Rangefinder(Sensor):
     range_topic : str
         The name of the topic carrying the range info.
     """
-    range_topic: Optional[str]
-
-    param_reqs: list[str] = ["range_topic"]
+    RANGE_TOPIC: Optional[str]
 
     # Constructors
-    def __init__(self, frame_name:Optional[str] = None, name:Optional[str] = None, offset:list[float]=[0.0,0.0,0.0], parent_frame:Optional[str] = None, range_topic:Optional[str] = None, sensor_type:Optional[SensorTypes] = None):
-        super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type)
-        self.range_topic = range_topic
+    def __init__(self, node_name):
+        super().__init__(node_name)
+        self.get_logger().info("Ingesting Rangefinder params...")
 
-    def check_dict(self, config_params):
-        """
-        A faux-constructor. Used to offload the parameter checking of a dict-encoded
-        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
-        and its subclasses.
-        """
-        # check for required Rangefinder params
-        if not set(Rangefinder.param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params in dict to create Rangefinder. Must have all of: {Rangefinder.param_reqs}")
-
-        # set Rangefinder params
-        self.range_topic = config_params["range_topic"]
-
-        # let the super class check its own params
-        super().check_dict(config_params)
+        # Ingest ROS parameters. Notify user when defaults are being used.
+        if self.has_parameter('range_topic'):
+            self.RANGE_TOPIC = self.get_parameter('range_topic').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("range_topic")
+            self.RANGE_TOPIC = "rangefinder"
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        assert self.tab_char is not None, "Cannot display null tab char"
-        t = self.tab_char * (tab_depth + 1)
-        rangefinder_fields = f"{t}Range topic: {self.range_topic}\n" + extra_fields
+        t = self._tab_char * (tab_depth + 1)
+        rangefinder_fields = f"{t}Range topic: {self.RANGE_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
 
     def __str__(self):
