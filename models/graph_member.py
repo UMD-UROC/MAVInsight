@@ -33,9 +33,10 @@ class GraphMember(Node):
     # Constructors
     def __init__(self, node_name:str):
         super().__init__(node_name, automatically_declare_parameters_from_overrides=True)
-        self.get_logger().info(f"Initialized Vehicle node: {node_name}")
+        self.get_logger().info(f"Received node name: {node_name}")
+        self.get_logger().info(f"Ingesting Graph Member params...")
 
-        # Ingest ROS parameters. Notify user that defaults are being used.
+        # Ingest ROS parameters. Notify user when defaults are being used.
         if self.has_parameter('frame_name'):
             self.FRAME_NAME = self.get_parameter('frame_name').get_parameter_value().string_value
         else:
