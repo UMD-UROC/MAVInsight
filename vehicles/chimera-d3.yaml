@@ -1,5 +1,0 @@
-name: Chimera D3
-frame_name: d3_base_link
-location_topic: "/uas3/global/local"
-parent_frame: map
-platform: quad

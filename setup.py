@@ -17,6 +17,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (f'share/{package_name}/vehicles', vehicle_configs),
         (f'share/{package_name}/sensors', sensor_configs),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
