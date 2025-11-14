@@ -133,36 +133,23 @@ class Gimbal(Sensor):
     orientation_topic : str
         The str name of the topic carrying the gimbal orientation data.
     """
-    orientation_topic: Optional[str]
-
-    param_reqs: list[str] = ["orientation_topic"]
+    ORIENTATION_TOPIC:str
 
     # Constructors
-    def __init__(self, frame_name:Optional[str] = None, name:Optional[str] = None, offset:list[float] = [0.0, 0.0, 0.0], orientation_topic:Optional[str] = None, parent_frame:Optional[str] = None, sensor_type:Optional[SensorTypes] = None, sensors:list[Sensor] = []):
-        super().__init__(frame_name=frame_name, name=name, offset=offset, parent_frame=parent_frame, sensor_type=sensor_type, sensors=sensors)
-        self.orientation_topic = orientation_topic
+    def __init__(self, node_name):
+        super().__init__(node_name)
+        self.get_logger().info("Ingesting Camera params...")
 
-    def check_dict(self, config_params):
-        """
-        A faux-constructor. Used to offload the parameter checking of a dict-encoded
-        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
-        and its subclasses.
-        """
-        # check for required Gimbal params
-        if not set(Gimbal.param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params in dict to create Gimbal. Must have all of: {Gimbal.param_reqs}")
-
-        # set Gimbal params
-        self.orientation_topic = config_params["orientation_topic"]
-        self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
-
-        # let the super class check its own params
-        super().check_dict(config_params)
+        # Ingest ROS parameters. Notify user when defaults are being used
+        if self.has_parameter("orientation_topic"):
+            self.ORIENTATION_TOPIC = self.get_parameter("orientation_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("orientation_topic")
+            self.ORIENTATION_TOPIC = "gimbal_orientation"
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        assert self.tab_char is not None, "Cannot display null tab char"
-        t = self.tab_char * (tab_depth + 1)
-        gimbal_fields = f"{t}Orientation topic: {self.orientation_topic}\n" + extra_fields
+        t = self._tab_char * (tab_depth + 1)
+        gimbal_fields = f"{t}Orientation topic: {self.ORIENTATION_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=gimbal_fields)
 
     def __str__(self):
