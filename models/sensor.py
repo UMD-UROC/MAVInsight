@@ -29,86 +29,57 @@ class Sensor(GraphMember):
     sensors : list[Sensor]
         A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
     """
-    offset: list[float]
-    sensor_type: Optional[SensorTypes]
-    sensors: list[Sensor]
+    OFFSET: list[float]
+    SENSOR_TYPE: SensorTypes
+    SENSORS: list[str]
 
     param_reqs = ["offset", "sensor_type"]
 
     # Constructors
-    def __init__(self, frame_name:Optional[str]=None, name:Optional[str]=None, offset:list[float]=[0.0,0.0,0.0], parent_frame:Optional[str]=None, sensor_type:Optional[SensorTypes]=None, sensors:list[Sensor]=[]):
-        """Basic Sensor constructor, no error/input checking/scrubbing"""
-        super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
-        self.offset = offset
-        self.sensor_type = sensor_type
-        self.sensors = sensors
+    def __init__(self, node_name):
+        super().__init__(node_name)
+        self.get_logger().info("Ingesting Sensor params...")
 
-    def check_dict(self, config_params):
-        """
-        A faux-constructor. Used to offload the parameter checking of a dict-encoded
-        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
-        and its subclasses.
-        """
-        # "guard" the case of a missing offset parameter from the dict. default to no offset: [0,0,0]
-        if ("offset" not in config_params.keys()) or (len(config_params["offset"]) == 0):
-            config_params["offset"] = [0.0,0.0,0.0]
+        # Ingest ROS parameters. Notify user when defaults are being used
+        if self.has_parameter('offset'):
+            offset_param_val = self.get_parameter('offset').get_parameter_value().double_array_value
+            try:
+                self.OFFSET = [float(f) for f in offset_param_val]
+                if len(self.OFFSET) != 3:
+                    self.OFFSET = [0.0, 0.0, 0.0]
+                    self.get_logger().error(f"Offset param must be exactly 3 elements long. Using, no-offset default.\n" +
+                                            f"Received: {offset_param_val}")
+            except ValueError as e:
+                self.OFFSET = [0.0 ,0.0 ,0.0]
+                self.get_logger().error(f"Unable to interpret offset param elements as floats. Using no-offset default.\n" +
+                                        f"Received: {offset_param_val}\n" +
+                                        f"Error: {e}")
+        else:
+            self.default_parameter_warning("offset")
+            self.OFFSET = [0.0, 0.0, 0.0]
 
-        # check for required Sensor params
-        if not set(Sensor.param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params in dict to create Sensor. Must have all of: {Sensor.param_reqs}")
+        if self.has_parameter('sensor_type'):
+            self.SENSOR_TYPE = SensorTypes(self.get_parameter("sensor_type").get_parameter_value().string_value)
+        else:
+            self.default_parameter_warning("sensor_type")
+            self.SENSOR_TYPE = SensorTypes.DEFAULT
 
-        # parameter checking
-        if len(config_params["offset"]) != 3:
-            raise ValueError(f"Sensor offset must be exactly 3 elements. Received: {config_params['offset']}")
-        if any([type(val) != float for val in config_params["offset"]]):
-            raise ValueError(f"Sensor offset values must be floats. Received: {config_params['offset']}")
-
-        # set Sensor params
-        self.offset = config_params["offset"]
-        self.sensor_type = SensorTypes(config_params["sensor_type"])
-        self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
-
-        # let the super class check its own params
-        super().check_dict(config_params)
-
-    @staticmethod
-    def _make_from_file_list(file_list:list[str]) -> list[Sensor]:
-        """Helper method to acquire a python list of qualified Sensor objects from a list
-        of the paths to/filenames of their yaml encodings.
-
-        This is useful, as `GraphMembers` that have other `GraphMembers` attached to them
-        (i.e. `Vehicles`->`Sensors, `Gimbals`->`Sensors`) encode their child `GraphMembers`
-        in their own yaml encodings as a list of filenames.
-
-        Parameters
-        ----------
-        file_list : list[str]
-            a list of the file names or paths of a correctly-yaml-encoded `Sensor` object.
-
-        Returns
-        -------
-        _ : list[Sensor]
-            a list of `Sensor` objects that were built based on the files named by the
-            input `file_list`.
-        """
-        s = []
-        for sensor_path in file_list:
-            s.append(sensor_factory(sensor_path))
-        return s
+        if self.has_parameter("sensors"):
+            self.SENSORS = list(self.get_parameter("sensors").get_parameter_value().string_array_value)
+        else:
+            self.SENSORS = []
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
-        assert self.tab_char is not None, "Cannot display null tab char"
-        assert self.sensor_type is not None, "Cannot display null sensor type"
-        t1 = self.tab_char * tab_depth
-        t2 = t1 + self.tab_char
-        sensors_string = "[]" if len(self.sensors) == 0 else "\n"
+        t1 = self._tab_char * tab_depth
+        t2 = t1 + self._tab_char
+        sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
         return (
-            f"{t1}{self.name} | Sensor {self.sensor_type.name}\n" +
-            f"{t2}Transform: {self.parent_frame} -> {self.frame_name}\n" +
-            f"{t2}Static offset from parent: (x: {self.offset[0]}, y: {self.offset[1]}, z: {self.offset[2]})\n" +
+            f"{t1}{self.DISPLAY_NAME} | Sensor {self.SENSOR_TYPE.name}\n" +
+            f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n" +
+            f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n" +
             extra_fields +
             f"{t2}Sensors: {sensors_string}" +
-            "\n".join(s._format(tab_depth=tab_depth + 2) for s in self.sensors)
+            ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
         )
 
     def __str__(self):

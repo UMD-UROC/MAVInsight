@@ -39,7 +39,7 @@ class Vehicle(GraphMember):
         super().__init__(node_name)
         self.get_logger().info(f"Ingesting Vehicle params...")
 
-        # Ingets ROS parameters. Notify user when defaults are being used.
+        # Ingest ROS parameters. Notify user when defaults are being used.
         if self.has_parameter('location_topic'):
             self.LOCATION_TOPIC = self.get_parameter('location_topic').get_parameter_value().string_value
         else:
