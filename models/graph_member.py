@@ -1,6 +1,11 @@
 # python imports
 from typing import Optional
-class GraphMember:
+
+# ROS imports
+import rclpy
+from rclpy.node import Node
+
+class GraphMember(Node):
     """The base class for all objects that could be displayed in the 3D panel of Foxglove
 
     Class Attributes
@@ -20,42 +25,42 @@ class GraphMember:
     tab_char : str
         The desired "tab" string. Used during string formatting of GraphMember and its subclasses
     """
-    frame_name:Optional[str]
-    name:Optional[str]
-    parent_frame:Optional[str]
-    tab_char:Optional[str]
-
-    param_reqs:list[str] = ["frame_name", "name", "parent_frame"]
+    FRAME_NAME:str
+    DISPLAY_NAME:str
+    PARENT_FRAME:str
+    _tab_char:str
 
     # Constructors
-    def __init__(self, name:Optional[str]=None, frame_name:Optional[str]=None, parent_frame:Optional[str]=None):
-        self.frame_name = frame_name
-        self.name = name
-        self.parent_frame = parent_frame
-        self.tab_char = "|   "
+    def __init__(self, node_name:str):
+        super().__init__(node_name, automatically_declare_parameters_from_overrides=True)
+        self.get_logger().info(f"Initialized Vehicle node: {node_name}")
 
-    def check_dict(self, config_params:dict):
-        """
-        A faux-constructor. Used to offload the parameter checking of a dict-encoded
-        `GraphMember` object to each level of the heirarchy of `GraphMember` classes
-        and its subclasses.
-        """
-        # check for required GraphMember params
-        if not set(GraphMember.param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params in dict to create GraphMember. Must have all of: {GraphMember.param_reqs}")
+        # Ingest ROS parameters. Notify user that defaults are being used.
+        if self.has_parameter('frame_name'):
+            self.FRAME_NAME = self.get_parameter('frame_name').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("frame_name")
+            self.FRAME_NAME = "base_link"
 
-        # set the GraphMember params
-        self.name = config_params["name"]
-        self.frame_name = config_params["frame_name"]
-        self.parent_frame=config_params["parent_frame"]
+        if self.has_parameter('display_name'):
+            self.DISPLAY_NAME = self.get_parameter('display_name').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("display_name")
+            self.DISPLAY_NAME = "Default Vehicle Name"
 
-    @classmethod
-    def from_dict(cls, config_params:dict):
-        g_member = cls()
+        if self.has_parameter('parent_frame'):
+            self.PARENT_FRAME = self.get_parameter('parent_frame').get_parameter_value().string_value
+        else:
+            self.get_logger().info(f"parent_frame param not set, using standard default: \"map\"")
+            self.PARENT_FRAME = "map"
 
-        g_member.check_dict(config_params)
+        if self.has_parameter('tab_char'):
+            self._tab_char = self.get_parameter('tab_char').get_parameter_value().string_value
+        else:
+            self._tab_char = "|   "
 
-        return g_member
+    def default_parameter_warning(self, param_name:str):
+        self.get_logger().warn(f"Parameter {param_name} not set in config file. using default")
 
     def __str__(self):
-        return f"{self.name}\nTransform: {self.parent_frame} -> {self.frame_name}\n"
+        return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
