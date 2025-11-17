@@ -7,7 +7,7 @@ from ament_index_python import get_package_share_directory
 from rclpy.node import Node
 
 # MAVInsight imports
-from models.vehicle import Vehicle, vehicle_factory
+from models.vehicle import Vehicle
 
 class VehicleTfPublisher(Node):
     """The TF Publisher for Vehicles described in mavinsight/vehicles/*"""
