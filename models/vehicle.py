@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Optional
 import yaml
 
-# ROS2 imports
+# ROS imports
+import rclpy
 from ament_index_python import get_package_share_directory
 
 # MAVInsight Imports
@@ -35,8 +36,8 @@ class Vehicle(GraphMember):
     SENSORS: list[str]
 
     # Constructors
-    def __init__(self, node_name:str):
-        super().__init__(node_name)
+    def __init__(self):
+        super().__init__()
         self.get_logger().info(f"Ingesting Vehicle params...")
 
         # Ingest ROS parameters. Notify user when defaults are being used.
@@ -57,11 +58,13 @@ class Vehicle(GraphMember):
         else:
             self.SENSORS = []
 
+        self.get_logger().info(self._format())
+
     def _format(self, tab_depth:int=0) -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char
         sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
-        return (
+        return ( f"Vehicle Structure ({self.get_name()}):\n" +
             f"{t1}{self.DISPLAY_NAME} | Vehicle ({self.PLATFORM.name})\n" +
             f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n" +
             f"{t2}Location Topic: {self.LOCATION_TOPIC}\n" +
@@ -71,3 +74,18 @@ class Vehicle(GraphMember):
 
     def __str__(self):
         return self._format()
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = Vehicle()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        print("Vehicle received KeyboardInterrupt. Shutting down...")
+    finally:
+        node.get_logger().info("Shutting down...")
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()

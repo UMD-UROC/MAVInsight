@@ -1,6 +1,8 @@
-chimera_d_3:
-  name: Chimera D3
-  frame_name: d3_base_link
-  location_topic: "/uas3/global/local"
-  parent_frame: map
-  platform: quad
+/**/*:
+  chimera_d_3:
+    ros__parameters:
+      display_name: Chimera D3
+      frame_name: d3_base_link
+      location_topic: "/uas3/global/local"
+      parent_frame: map
+      platform: quad

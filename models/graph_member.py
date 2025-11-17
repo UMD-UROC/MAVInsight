@@ -31,9 +31,9 @@ class GraphMember(Node):
     _tab_char:str
 
     # Constructors
-    def __init__(self, node_name:str):
-        super().__init__(node_name, automatically_declare_parameters_from_overrides=True)
-        self.get_logger().info(f"Received node name: {node_name}")
+    def __init__(self):
+        super().__init__("graph_member", automatically_declare_parameters_from_overrides=True)
+        self.get_logger().info(f"Received node name: {self.get_name()}")
         self.get_logger().info(f"Ingesting Graph Member params...")
 
         # Ingest ROS parameters. Notify user when defaults are being used.
@@ -65,3 +65,18 @@ class GraphMember(Node):
 
     def __str__(self):
         return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = GraphMember()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        print("GraphMember received KeyboardInterrupt. Shutting down...")
+    finally:
+        node.get_logger().info("Shutting down...")
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
