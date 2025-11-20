@@ -1,0 +1,15 @@
+/**/*:
+  two_axis_gimbal:
+    ros__parameters:
+      display_name: 2-Axis Gimbal (D4)
+      frame_name: d4_gimbal_frame
+      offset:
+        - 1.0
+        - 2.0
+        - 3.0
+      orientation_topic: /uas4/gimbal_orientation_topic
+      parent_frame: d4_base_link
+      sensor_type: gimbal
+      sensors:
+        - rangefinder.yaml
+        - narrow_cam.yaml

@@ -1,9 +1,12 @@
-name: RGB Camera (D4)
-frame_name: d4_rgb
-offset:
-  - 0.0
-  - 0.0
-  - 0.0
-cam_info_topic: /uas4/camera/camera_info
-parent_frame: d4_gimbal_frame
-sensor_type: camera
+/**/*:
+  narrow_cam:
+    ros__parameters:
+      display_name: RGB Camera (D4)
+      frame_name: d4_rgb
+      offset:
+        - 0.0
+        - 0.0
+        - 0.0
+      cam_info_topic: /uas4/camera/camera_info
+      parent_frame: d4_gimbal_frame
+      sensor_type: camera
