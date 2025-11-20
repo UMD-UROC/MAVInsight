@@ -35,8 +35,11 @@ def build_nodes(paths : list[Path]) -> list[Node]:
         config_path = paths.pop()
         LOGGER.info(f"Starting processing on {config_path}")
         assert isinstance(config_path, Path), f"Unrecognized build_nodes input type."
+        if config_path.suffix != ".yaml":
+            LOGGER.error(f"Non-yaml config file detected: {config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
+            continue
         if config_path in processed:
-            LOGGER.error(f"Potential circular path detected in config files.\nConfig file: {config_path.as_posix()} is contained by a sub-member")
+            LOGGER.error(f"Potential circular path detected in config files.\nConfig file: {config_path.as_posix()} is contained by a sub-member.\nSkipping...")
             continue
         LOGGER.debug(f"non-circular path")
         # path is checkable, add to processed list
@@ -53,16 +56,20 @@ def build_nodes(paths : list[Path]) -> list[Node]:
             continue
         LOGGER.debug(f"abs path acquired")
 
+        # open file and confirm yaml encoding
         with open(abs_path.as_posix(), 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         if type(config) is not dict:
-            LOGGER.error(f"Error parsing file: {abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.")
+            LOGGER.error(f"Error parsing file: {abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
         LOGGER.debug(f"file opened successfully")
 
+        # parse yaml down to the param layer (remove the layers of nesting above params)
         while len(config.keys()) == 1:
             config = config[next(iter(config))]
         LOGGER.debug(f"Base yaml acquired")
+
+        # select the correct executable for this config file
         try:
             if 'platform' in config.keys():
                 ex = 'vehicle'
@@ -76,6 +83,7 @@ def build_nodes(paths : list[Path]) -> list[Node]:
             continue
         LOGGER.debug(f"File type identified")
 
+        # create Node action for launch description
         node_list.append(Node(
             package=package_name,
             executable=ex,
@@ -85,7 +93,8 @@ def build_nodes(paths : list[Path]) -> list[Node]:
             output='screen'
         ))
 
-        LOGGER.info(f"Add new config files {config.get('sensors'), []}")
+        # add sub-members to list of nodes to be built
+        LOGGER.info(f"Adding new config files: {config.get('sensors', [])}")
         for sens in config.get('sensors', []):
             paths.append(Path(sens))
 

@@ -7,18 +7,13 @@ import rclpy
 # MAVInsight Imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
-from models.sensor import Sensor
 
 class Vehicle(GraphMember):
-    """Class that defines a drone platform and its sensors
+    """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
+    This Class defines what information should be published for all Vehicles. (i.e.
+    TF Frame for position, velocity `Marker`, etc).
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Vehicle` would need,
-        in addition to the `GraphMember's`, to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
     location_topic : str
         The ROS topic that this `Vehicle` should look at to get its location data.

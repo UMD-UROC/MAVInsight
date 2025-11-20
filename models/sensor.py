@@ -10,22 +10,20 @@ from models.graph_member import GraphMember
 from models.sensor_types import SensorTypes
 
 class Sensor(GraphMember):
-    """Class that defines a sensor and its relation to its parent frame
+    """Class/Node that defines a sensor and its relation to its parent frame. This class
+    defines how and what information will be published to Foxglove for every Sensor (i.e.
+    TF Frame for position w.r.t. the Vehicle, `Marker`s representing sensor readings, etc)
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Sensor` would need,
-        in addition to the `GraphMember's`, to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
     offset : list[float]
-        An [x, y, z] list of values that represents the static offset between the parent frame and this frame in meters.
-    sensor_type : str | SensorTypes
+        An [x, y, z] list of values that represents the static offset between the parent
+        frame and this frame in meters.
+    sensor_type : str
         The type of this Sensor (informed by MAVInsight.models.sensor_types.py enum).
     sensors : list[Sensor]
-        A list of other Sensors that are attached to this Sensor. Common example is Camera (Sensor) on a Gimbal (Sensor).
+        A list of other Sensors that are attached to this Sensor. A common example is a
+        Camera (Sensor) on a Gimbal (Sensor).
     """
     OFFSET: list[float]
     SENSOR_TYPE: SensorTypes
@@ -82,15 +80,10 @@ class Sensor(GraphMember):
         return self._format()
 
 class Camera(Sensor):
-    """Class defining a Camera for Foxglove Viz. Extends Sensor.
+    """Class/Node defining a Camera and how/what visualization info will be published for
+    Foxglove.
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Camera` would need,
-        in addition to the `Sensor's`, to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
     cam_info_topic : str
         The str name of the topic carrying the camera info.
@@ -118,15 +111,10 @@ class Camera(Sensor):
         return self._format()
 
 class Gimbal(Sensor):
-    """Class defining a Gimbal for Foxglove Viz. Extends Sensor.
+    """Class/Node defining a Gimbal and how/what visualization info will be published for
+    Foxglove.
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Gimbal` would need,
-        in addition to the `Sensor's`, to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
     orientation_topic : str
         The str name of the topic carrying the gimbal orientation data.
@@ -154,15 +142,10 @@ class Gimbal(Sensor):
         return self._format()
 
 class Rangefinder(Sensor):
-    """Class defining a Rangefinder for Foxglove Viz. Extends Sensor.
+    """Class/Node defining a Rangefinder and how/what visualization info will be published
+    for Foxglove.
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Rangefinder` would need,
-        in addition to the `Sensor's`, to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
     range_topic : str
         The name of the topic carrying the range info.

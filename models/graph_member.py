@@ -3,24 +3,21 @@ import rclpy
 from rclpy.node import Node
 
 class GraphMember(Node):
-    """The base class for all objects that could be displayed in the 3D panel of Foxglove
+    """The base class/Node for all objects that could be displayed in the 3D panel of
+    Foxglove.
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `GraphMember` would need
-        to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
+    display_name: str
+        The human-readable display name for the object. (i.e. "Chimera D4")
     frame_name : str
-        The string name of the frame that this object represents. (i.e. "base_link")
-    name : str
-        The string internal name of this object. (i.e. "Chimera D4")
+        The name of the frame for this object. Used in TF Frames. (i.e. "base_link")
     parent_frame : str
-        The string name of the frame of the parent to this object. (i.e. "map")
+        The name of the frame that is a parent to this object's frame. Used in TF Frames.
+        (i.e. "map")
     tab_char : str
-        The desired "tab" string. Used during string formatting of GraphMember and its subclasses
+        The desired "tab" string. Used during string formatting of GraphMember and its
+        subclasses.
     """
     FRAME_NAME:str
     DISPLAY_NAME:str
@@ -58,6 +55,14 @@ class GraphMember(Node):
             self._tab_char = "|   "
 
     def default_parameter_warning(self, param_name:str):
+        """Helper method to output a boilerplate warning indicating that a default
+        parameter is being used in the absence of a defined valid parameter.
+
+        Parameters
+        ----------
+        param_name : str
+            The name of the parameter to be used in the warning.
+        """
         self.get_logger().warn(f"Parameter {param_name} not set in config file. using default")
 
     def __str__(self):
