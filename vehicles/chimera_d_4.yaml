@@ -7,5 +7,5 @@
       parent_frame: map
       platform: quad
       sensors:
-        - 2-axis-gimbal.yaml
+        - two_axis_gimbal.yaml
         - downward_facing_cam.yaml

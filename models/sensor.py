@@ -1,12 +1,9 @@
 # python imports
 from __future__ import annotations
-from pathlib import Path
 from typing import Optional
-import yaml
 
 # ROS imports
 import rclpy
-from ament_index_python import get_package_share_directory
 
 # MAVInsight imports
 from models.graph_member import GraphMember
@@ -201,9 +198,9 @@ def run_sensor(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("Sensor received KeyboardInterrupt. Shutting down...")
+        pass
     finally:
-        node.get_logger().info("Shutting down...")
+        print("Shutting down...")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
@@ -216,9 +213,9 @@ def run_camera(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("Camera received KeyboardInterrupt. Shutting down...")
+        pass
     finally:
-        node.get_logger().info("Shutting down...")
+        print("Shutting down...")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
@@ -231,9 +228,9 @@ def run_gimbal(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("Gimbal received KeyboardInterrupt. Shutting down...")
+        pass
     finally:
-        node.get_logger().info("Shutting down...")
+        print("Shutting down...")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
@@ -246,47 +243,9 @@ def run_rangefinder(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("Rangefinder received KeyboardInterrupt. Shutting down...")
+        pass
     finally:
-        node.get_logger().info("Shutting down...")
+        print("Shutting down...")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
-
-# def sensor_factory(filename:str) -> Sensor:
-#     """Factory for producing a (supported) sensor defined in mavinsight/sensors/*.yaml."""
-
-#     # this is necessary for unit tests and encoding test models in the test directory,
-#     # regardless of abs path to this package
-#     if filename.startswith("_test/"):
-#         filename = filename.removeprefix("_test/")
-#         filename = (Path(__file__).resolve().parent.parent / "test" / filename).as_posix()
-
-#     # assume the node is looking for the name of a sensor config found in the shared config
-#     # directory of this ROS package
-#     path = Path(filename)
-#     if not path.is_absolute():
-#         path = Path(get_package_share_directory("mavinsight")) / "sensors" / path
-
-#     if not path.is_file():
-#         raise FileNotFoundError(f"No configs found under {path}")
-
-#     # call the appropriate constructor based on the type of sensor provided
-#     with open(path, 'r', encoding='utf-8') as sensor_file:
-#         sensor_config = yaml.safe_load(sensor_file)
-#         if type(sensor_config) is not dict:
-#             raise TypeError(f"Error parsing {path} as yaml in sensor_factory. Sensor configs must be yaml-encoded.")
-
-#         if 'sensor_type' not in sensor_config:
-#             raise ValueError(f"Sensor config file {path} does not contain sensor type parameter.")
-
-#         match sensor_config["sensor_type"]:
-#             case SensorTypes.CAMERA.value:
-#                 return (Camera.from_dict(sensor_config))
-#             case SensorTypes.GIMBAL.value:
-#                 return (Gimbal.from_dict(sensor_config))
-#             case SensorTypes.RANGEFINDER.value:
-#                 return (Rangefinder.from_dict(sensor_config))
-#             case _:
-#                 raise ValueError(f"Unrecognized Sensor type: {sensor_config['sensor_type']}")

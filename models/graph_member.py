@@ -1,6 +1,3 @@
-# python imports
-from typing import Optional
-
 # ROS imports
 import rclpy
 from rclpy.node import Node
@@ -74,9 +71,9 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("GraphMember received KeyboardInterrupt. Shutting down...")
+        pass
     finally:
-        node.get_logger().info("Shutting down...")
+        print("Shutting down...")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

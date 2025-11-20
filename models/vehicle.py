@@ -1,12 +1,8 @@
 # python imports
 from __future__ import annotations
-from pathlib import Path
-from typing import Optional
-import yaml
 
 # ROS imports
 import rclpy
-from ament_index_python import get_package_share_directory
 
 # MAVInsight Imports
 from models.graph_member import GraphMember
@@ -83,9 +79,9 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("Vehicle received KeyboardInterrupt. Shutting down...")
+        pass
     finally:
-        node.get_logger().info("Shutting down...")
+        print("Shutting down...")
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
