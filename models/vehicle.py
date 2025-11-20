@@ -1,9 +1,26 @@
 # python imports
 from __future__ import annotations
+from scipy.spatial.transform import Rotation
+
+# ROS2 imports
+from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
+from tf2_ros import TransformBroadcaster
+
+# ROS2 Message imports
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
 
 # MAVInsight Imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
+
+# TODO: kick this out to a utils file
+viz_qos = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1
+)
 
 class Vehicle(GraphMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -46,7 +63,30 @@ class Vehicle(GraphMember):
         else:
             self.SENSORS = []
 
-        self.get_logger().info(self._format())
+        # Initialize subscribers
+        self.create_subscription(Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos) # TODO QOS profile.
+
+        # Initialize publishers
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+    def publish_position(self, msg:Odometry):
+        t =TransformStamped()
+
+        # header
+        t.header.stamp = msg.header.stamp
+        t.header.frame_id = self.PARENT_FRAME
+        t.child_frame_id = self.FRAME_NAME
+
+        # position
+        input = msg.pose.pose.position
+        t.transform.translation.x = input.x
+        t.transform.translation.y = input.y
+        t.transform.translation.z = input.z
+
+        # orientation
+        t.transform.rotation = msg.pose.pose.orientation
+        self.tf_broadcaster.sendTransform(t)
+
     def _format(self, tab_depth:int=0) -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char
