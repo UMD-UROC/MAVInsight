@@ -68,17 +68,16 @@ class GraphMember(Node):
     def __str__(self):
         return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
 
-def main(args=None):
-    rclpy.init(args=args)
-
-    node = GraphMember()
-
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        print("Shutting down...")
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    @classmethod
+    def main(cls, args=None):
+        rclpy.init(args=args)
+        node = cls()
+        try:
+            rclpy.spin(node)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            print("Shutting down...")
+            node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()

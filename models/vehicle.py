@@ -65,18 +65,3 @@ class Vehicle(GraphMember):
 
     def __str__(self):
         return self._format()
-
-def main(args=None):
-    rclpy.init(args=args)
-
-    node = Vehicle()
-
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        print("Shutting down...")
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()

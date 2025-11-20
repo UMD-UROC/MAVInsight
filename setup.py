@@ -28,12 +28,12 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "graph_member = models.graph_member:main",
-            "vehicle = models.vehicle:main",
-            "sensor = models.sensor:run_sensor",
-            "camera = models.sensor:run_camera",
-            "gimbal = models.sensor:run_gimbal",
-            "rangefinder = models.sensor:run_rangefinder"
+            "graph_member = models.graph_member:GraphMember.main",
+            "vehicle = models.vehicle:Vehicle.main",
+            "sensor = models.sensor:Sensor.main",
+            "camera = models.sensor:Camera.main",
+            "gimbal = models.sensor:Gimbal.main",
+            "rangefinder = models.sensor:Rangefinder.main"
         ],
     },
 )
