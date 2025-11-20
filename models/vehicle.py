@@ -47,7 +47,6 @@ class Vehicle(GraphMember):
             self.SENSORS = []
 
         self.get_logger().info(self._format())
-
     def _format(self, tab_depth:int=0) -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char

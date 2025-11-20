@@ -10,12 +10,16 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger('vehicle_launch_logger')
+initial_paths_overrides = ['chimera_d_3.yaml']
 
 def generate_launch_description():
     ld = LaunchDescription()
 
     vehicle_dir = Path(get_package_share_directory(package_name)) / 'vehicles'
-    initial_paths = [p for p in vehicle_dir.iterdir()]
+    if len(initial_paths_overrides) != 0:
+        initial_paths = [(vehicle_dir) / p for p in initial_paths_overrides]
+    else:
+        initial_paths = [p for p in vehicle_dir.iterdir()]
     LOGGER.info(f"Initial paths: {[p.name for p in initial_paths]}")
 
     nodes = build_nodes(initial_paths)
@@ -33,7 +37,7 @@ def build_nodes(paths : list[Path]) -> list[Node]:
     while paths:
         # capture and error check next path
         config_path = paths.pop()
-        LOGGER.info(f"Starting processing on {config_path}")
+        LOGGER.info(f"Starting processing on {config_path.as_posix()}")
         assert isinstance(config_path, Path), f"Unrecognized build_nodes input type."
         if config_path.suffix != ".yaml":
             LOGGER.error(f"Non-yaml config file detected: {config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
