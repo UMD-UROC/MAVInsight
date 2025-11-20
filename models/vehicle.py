@@ -1,9 +1,6 @@
 # python imports
 from __future__ import annotations
 
-# ROS imports
-import rclpy
-
 # MAVInsight Imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms

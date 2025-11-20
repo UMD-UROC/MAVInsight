@@ -2,9 +2,6 @@
 from __future__ import annotations
 from typing import Optional
 
-# ROS imports
-import rclpy
-
 # MAVInsight imports
 from models.graph_member import GraphMember
 from models.sensor_types import SensorTypes
