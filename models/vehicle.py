@@ -1,9 +1,26 @@
 # python imports
 from __future__ import annotations
+from scipy.spatial.transform import Rotation
 
-# MAVInsight Imports
+# ROS2 imports
+from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
+
+# ROS2 message imports
+from geometry_msgs.msg import Transform, TransformStamped, Vector3
+from nav_msgs.msg import Odometry
+from std_msgs.msg import Header
+
+# MAVInsight imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
+
+# TODO: kick this out to a utils file
+viz_qos = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1
+)
 
 class Vehicle(GraphMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -23,12 +40,12 @@ class Vehicle(GraphMember):
     PLATFORM: Platforms
     SENSORS: list[str]
 
-    # Constructors
+    # constructors
     def __init__(self):
         super().__init__()
         self.get_logger().info(f"Ingesting Vehicle params...")
 
-        # Ingest ROS parameters. Notify user when defaults are being used.
+        # ingest ROS parameters. Notify user when defaults are being used
         if self.has_parameter('location_topic'):
             self.LOCATION_TOPIC = self.get_parameter('location_topic').get_parameter_value().string_value
         else:
@@ -46,7 +63,27 @@ class Vehicle(GraphMember):
         else:
             self.SENSORS = []
 
-        self.get_logger().info(self._format())
+        # initialize subscribers
+        self.create_subscription(Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos) # TODO QOS profile.
+
+    def publish_position(self, msg:Odometry):
+        # header
+        head_out = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME)
+
+        # transform
+        pos_in = msg.pose.pose.position
+        pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
+        tf_out = Transform(translation=pos_out, rotation=msg.pose.pose.orientation)
+
+        # build TF
+        t = TransformStamped(
+            header = head_out,
+            child_frame_id = self.FRAME_NAME,
+            transform = tf_out
+        )
+
+        self.tf_broadcaster.sendTransform(t)
+
     def _format(self, tab_depth:int=0) -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char

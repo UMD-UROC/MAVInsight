@@ -3,9 +3,8 @@
     ros__parameters:
       display_name: Chimera D4
       frame_name: d4_base_link
-      location_topic: "/uas4/global/local"
+      location_topic: "/uas4/global_position/local"
       parent_frame: map
       platform: quad
       sensors:
         - two_axis_gimbal.yaml
-        - downward_facing_cam.yaml

@@ -1,6 +1,7 @@
-# ROS imports
+# ROS2 imports
 import rclpy
 from rclpy.node import Node
+from tf2_ros import TransformBroadcaster
 
 class GraphMember(Node):
     """The base class/Node for all objects that could be displayed in the 3D panel of
@@ -53,6 +54,9 @@ class GraphMember(Node):
             self._tab_char = self.get_parameter('tab_char').get_parameter_value().string_value
         else:
             self._tab_char = "|   "
+
+        # initialize TF broadcaster
+        self.tf_broadcaster = TransformBroadcaster(self)
 
     def default_parameter_warning(self, param_name:str):
         """Helper method to output a boilerplate warning indicating that a default
