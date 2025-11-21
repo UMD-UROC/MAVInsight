@@ -6,11 +6,12 @@ from scipy.spatial.transform import Rotation
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
 from tf2_ros import TransformBroadcaster
 
-# ROS2 Message imports
-from geometry_msgs.msg import TransformStamped
+# ROS2 message imports
+from geometry_msgs.msg import Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Header
 
-# MAVInsight Imports
+# MAVInsight imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
 
@@ -40,12 +41,12 @@ class Vehicle(GraphMember):
     PLATFORM: Platforms
     SENSORS: list[str]
 
-    # Constructors
+    # constructors
     def __init__(self):
         super().__init__()
         self.get_logger().info(f"Ingesting Vehicle params...")
 
-        # Ingest ROS parameters. Notify user when defaults are being used.
+        # ingest ROS parameters. Notify user when defaults are being used
         if self.has_parameter('location_topic'):
             self.LOCATION_TOPIC = self.get_parameter('location_topic').get_parameter_value().string_value
         else:
@@ -63,28 +64,28 @@ class Vehicle(GraphMember):
         else:
             self.SENSORS = []
 
-        # Initialize subscribers
+        # initialize subscribers
         self.create_subscription(Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos) # TODO QOS profile.
 
-        # Initialize publishers
+        # initialize publishers
         self.tf_broadcaster = TransformBroadcaster(self)
 
     def publish_position(self, msg:Odometry):
-        t =TransformStamped()
-
         # header
-        t.header.stamp = msg.header.stamp
-        t.header.frame_id = self.PARENT_FRAME
-        t.child_frame_id = self.FRAME_NAME
+        head_out = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME)
 
-        # position
-        input = msg.pose.pose.position
-        t.transform.translation.x = input.x
-        t.transform.translation.y = input.y
-        t.transform.translation.z = input.z
+        # transformation
+        pos_in = msg.pose.pose.position
+        pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
+        tf_out = Transform(translation=pos_out, rotation=msg.pose.pose.orientation)
 
-        # orientation
-        t.transform.rotation = msg.pose.pose.orientation
+        # build TF
+        t =TransformStamped(
+            header = head_out,
+            child_frame_id = self.FRAME_NAME,
+            transform = tf_out
+        )
+
         self.tf_broadcaster.sendTransform(t)
 
     def _format(self, tab_depth:int=0) -> str:
