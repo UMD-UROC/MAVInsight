@@ -4,7 +4,6 @@ from scipy.spatial.transform import Rotation
 
 # ROS2 imports
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
-from tf2_ros import TransformBroadcaster
 
 # ROS2 message imports
 from geometry_msgs.msg import Transform, TransformStamped, Vector3
@@ -67,20 +66,17 @@ class Vehicle(GraphMember):
         # initialize subscribers
         self.create_subscription(Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos) # TODO QOS profile.
 
-        # initialize publishers
-        self.tf_broadcaster = TransformBroadcaster(self)
-
     def publish_position(self, msg:Odometry):
         # header
         head_out = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME)
 
-        # transformation
+        # transform
         pos_in = msg.pose.pose.position
         pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
         tf_out = Transform(translation=pos_out, rotation=msg.pose.pose.orientation)
 
         # build TF
-        t =TransformStamped(
+        t = TransformStamped(
             header = head_out,
             child_frame_id = self.FRAME_NAME,
             transform = tf_out
