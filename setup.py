@@ -17,6 +17,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (f'share/{package_name}/vehicles', vehicle_configs),
         (f'share/{package_name}/sensors', sensor_configs),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -27,7 +28,12 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "vehicle_tf_publisher = mavinsight.vehicle_tf_publisher:main"
+            "graph_member = models.graph_member:GraphMember.main",
+            "vehicle = models.vehicle:Vehicle.main",
+            "sensor = models.sensor:Sensor.main",
+            "camera = models.sensor:Camera.main",
+            "gimbal = models.sensor:Gimbal.main",
+            "rangefinder = models.sensor:Rangefinder.main"
         ],
     },
 )

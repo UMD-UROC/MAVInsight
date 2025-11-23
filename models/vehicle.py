@@ -1,26 +1,16 @@
 # python imports
 from __future__ import annotations
-from pathlib import Path
-import yaml
-
-# ROS2 imports
-from ament_index_python import get_package_share_directory
 
 # MAVInsight Imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
-from models.sensor import Sensor
 
 class Vehicle(GraphMember):
-    """Class that defines a drone platform and its sensors
+    """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
+    This Class defines what information should be published for all Vehicles. (i.e.
+    TF Frame for position, velocity `Marker`, etc).
 
-    Class Attributes
-    ----------------
-    param_reqs : list[str]
-        A list of required parameters/keys that a dict-encoded version of a `Vehicle` would need,
-        in addition to the `GraphMember's`, to be considered "valid".
-
-    Attributes
+    Parameters
     ----------
     location_topic : str
         The ROS topic that this `Vehicle` should look at to get its location data.
@@ -29,79 +19,45 @@ class Vehicle(GraphMember):
     sensors : list[Sensor]
         A list of `Sensors` attached to this vehicle.
     """
-    location_topic: str
-    platform: Platforms
-    sensors: list[Sensor]
-
-    param_reqs:list[str] = ["location_topic", "platform"]
+    LOCATION_TOPIC: str
+    PLATFORM: Platforms
+    SENSORS: list[str]
 
     # Constructors
-    def __init__(self, name:str=None, frame_name:str=None, location_topic:str=None, parent_frame:str="map", platform:Platforms=None, sensors:list[Sensor]=[]):
-        """Basic Vehicle constructor. No error/input checking/scrubbing."""
-        super().__init__(name=name, frame_name=frame_name, parent_frame=parent_frame)
-        self.location_topic = location_topic
-        self.platform = platform
-        self.sensors = sensors
+    def __init__(self):
+        super().__init__()
+        self.get_logger().info(f"Ingesting Vehicle params...")
 
-    def check_dict(self, config_params: dict):
-        """
-        A faux-constructor. Used to offload the parameter checking of a dict-encoded
-        `GraphMember` object to each level of the class heirarchy of `GraphMember`
-        and its subclasses.
-        """
+        # Ingest ROS parameters. Notify user when defaults are being used.
+        if self.has_parameter('location_topic'):
+            self.LOCATION_TOPIC = self.get_parameter('location_topic').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning('location_topic')
+            self.LOCATION_TOPIC = "gps"
 
-        # "guard" the case of a missing parent frame in the dict, default to "map"
-        if ("parent_frame" not in config_params.keys()):
-            config_params["parent_frame"] = "map"
+        if self.has_parameter("platform"):
+            self.PLATFORM = Platforms(self.get_parameter("platform").get_parameter_value().string_value)
+        else:
+            self.default_parameter_warning('platform')
+            self.PLATFORM = Platforms.DEFAULT
 
-        # check for required Vehicle params
-        if not set(Vehicle.param_reqs).issubset(set(config_params.keys())):
-            raise ValueError(f"Not enough params in dict to create Vehicle. Must have all of: {Vehicle.param_reqs}")
+        if self.has_parameter("sensors"):
+            self.SENSORS = list(self.get_parameter("sensors").get_parameter_value().string_array_value)
+        else:
+            self.SENSORS = []
 
-        # set the Vehicle params
-        self.location_topic = config_params["location_topic"]
-        self.platform = Platforms(config_params["platform"])
-        self.sensors = Sensor._make_from_file_list(config_params.get("sensors", []))
-
-        # let the super check its own params
-        super().check_dict(config_params)
-
+        self.get_logger().info(self._format())
     def _format(self, tab_depth:int=0) -> str:
-        t1 = self.tab_char * tab_depth
-        t2 = t1 + self.tab_char
-        sensors_string = "[]" if len(self.sensors) == 0 else "\n"
-        return (
-            f"{t1}{self.name} | Vehicle ({self.platform.name})\n" +
-            f"{t2}Transform: {self.parent_frame} -> {self.frame_name}\n" +
-            f"{t2}Location Topic: {self.location_topic}\n" +
+        t1 = self._tab_char * tab_depth
+        t2 = t1 + self._tab_char
+        sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
+        return ( f"Vehicle Structure ({self.get_name()}):\n" +
+            f"{t1}{self.DISPLAY_NAME} | Vehicle ({self.PLATFORM.name})\n" +
+            f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n" +
+            f"{t2}Location Topic: {self.LOCATION_TOPIC}\n" +
             f"{t2}Sensors: {sensors_string}" +
-            ("\n".join(s._format(tab_depth=tab_depth + 2) for s in self.sensors))
+            ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
         )
 
     def __str__(self):
         return self._format()
-
-def vehicle_factory(filename:str) -> Vehicle:
-    """Factory for producing a (supported) vehicle defined in mavinsight/vehicles/*.yaml."""
-
-    # this is necessary for unit tests and encoding test models in the test directory,
-    # regardless of abs path to this package
-    if filename.startswith("_test/"):
-        filename = filename.removeprefix("_test/")
-        filename = Path(__file__).resolve().parent.parent / "test/vehicles" / filename
-
-    # assume the node is looking for the name of a vehicle config found in the shared config
-    # directory of this ROS package
-    path = Path(filename)
-    if not path.is_absolute():
-        path = Path(get_package_share_directory("mavinsight")) / "vehicles" / path
-
-    if not path.is_file():
-        raise FileNotFoundError(f"No configs found under {path}")
-
-    with open(path, 'r', encoding='utf-8') as sensor_file:
-        vehicle_config = yaml.safe_load(sensor_file)
-        if type(vehicle_config) is not dict:
-            raise TypeError(f"Error parsing {path} as yaml in vehicle_factory. Vehicle configs must be yaml-encoded.")
-
-        return Vehicle.from_dict(vehicle_config)
