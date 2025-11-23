@@ -1,10 +1,10 @@
 # python imports
 from __future__ import annotations
+from scipy.spatial.transform import Rotation as R
 from typing import Optional
 
-# ROS imports
+# ROS2 imports
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
-from tf2_ros import StaticTransformBroadcaster
 
 # ROS2 message imports
 from geometry_msgs.msg import Transform, TransformStamped, Vector3
@@ -12,6 +12,7 @@ from mavros_msgs.msg import GimbalDeviceAttitudeStatus
 from std_msgs.msg import Header
 
 # MAVInsight imports
+from models.frame_utils import build_ned_2_enu_frame
 from models.graph_member import GraphMember
 from models.sensor_types import SensorTypes
 
@@ -30,6 +31,9 @@ class Sensor(GraphMember):
 
     Parameters
     ----------
+    coord_frame_tf : str
+        A string specifying a frame conversion to apply from the parent to the child
+        frame.
     offset : list[float]
         An [x, y, z] list of values that represents the static offset between the parent
         frame and this frame in meters.
@@ -39,6 +43,7 @@ class Sensor(GraphMember):
         A list of other Sensors that are attached to this Sensor. A common example is a
         Camera (Sensor) on a Gimbal (Sensor).
     """
+    COORD_FRAME_TF: str | None
     OFFSET: list[float]
     SENSOR_TYPE: SensorTypes
     SENSORS: list[str]
@@ -50,6 +55,10 @@ class Sensor(GraphMember):
 
         # ingest ROS parameters
         # notify user when defaults are being used
+        if self.has_parameter('coord_frame_tf'):
+            self.COORD_FRAME_TF = self.get_parameter('coord_frame_tf').get_parameter_value().string_value
+        else:
+            self.COORD_FRAME_TF = None
         if self.has_parameter('offset'):
             offset_param_val = self.get_parameter('offset').get_parameter_value().double_array_value
             try:
@@ -85,8 +94,7 @@ class Sensor(GraphMember):
         # broadcast the static transform of an offset, if one is present
         if len(self.OFFSET) == 3:
             static_frame_name = f"{self.FRAME_NAME}_offset"
-            self.get_logger().info(f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static frame: {static_frame_name}")
-            self.tf_static_broadcaster = StaticTransformBroadcaster(self)
+            self.get_logger().info(f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static TF with child frame: {static_frame_name}")
 
             # header
             head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
@@ -103,10 +111,22 @@ class Sensor(GraphMember):
                 child_frame_id = static_frame_name,
                 transform = tf_out
             )
+            self.get_logger().debug(f"broadcasting {self.PARENT_FRAME} to {static_frame_name}:\n{s_t}")
             self.tf_static_broadcaster.sendTransform(s_t)
 
             # allow sub-members to attach to this new offset frame
             self.PARENT_FRAME = static_frame_name
+
+        # apply a coordinate frame transform, if present
+        if self.COORD_FRAME_TF:
+            self.get_logger().info(f"Received a coord frame transform param: {self.COORD_FRAME_TF}")
+            static_frame_name = f"{self.FRAME_NAME}_ned_reporting_compensator"
+            if (self.COORD_FRAME_TF == 'ned2enu'):
+                self.get_logger().info(f"Recognized coord conversion. Building new static tf with child frame: {static_frame_name}")
+                s_t = build_ned_2_enu_frame(self.PARENT_FRAME, static_frame_name)
+                self.get_logger().debug(f"broadcasting {self.PARENT_FRAME} to {static_frame_name}:\n{s_t}")
+                self.tf_static_broadcaster.sendTransform(s_t)
+                self.PARENT_FRAME = static_frame_name
 
     def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
         t1 = self._tab_char * tab_depth
@@ -170,7 +190,7 @@ class Gimbal(Sensor):
     # constructors
     def __init__(self):
         super().__init__()
-        self.get_logger().info("Ingesting Camera params...")
+        self.get_logger().info("Ingesting Gimbal params...")
 
         # ingest ROS parameters
         # notify user when defaults are being used

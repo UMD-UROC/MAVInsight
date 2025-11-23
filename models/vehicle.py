@@ -1,6 +1,5 @@
 # python imports
 from __future__ import annotations
-from scipy.spatial.transform import Rotation
 
 # ROS2 imports
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy

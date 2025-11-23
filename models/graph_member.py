@@ -1,7 +1,10 @@
+# python imports
+import time
+
 # ROS2 imports
 import rclpy
 from rclpy.node import Node
-from tf2_ros import TransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
 class GraphMember(Node):
     """The base class/Node for all objects that could be displayed in the 3D panel of
@@ -57,6 +60,16 @@ class GraphMember(Node):
 
         # initialize TF broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
+
+        # initialize static broadcaster
+        self.tf_static_broadcaster = StaticTransformBroadcaster(self)
+        self.get_logger().info(f"Waiting for Foxglove...")
+        i = 0
+        while self.count_subscribers('/tf_static') == 0:
+            self.get_logger().info(f"...{i}")
+            i+=1
+            time.sleep(1.0)
+        self.get_logger().info(f"Foxglove found.")
 
     def default_parameter_warning(self, param_name:str):
         """Helper method to output a boilerplate warning indicating that a default
