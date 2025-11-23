@@ -3,6 +3,7 @@ import unittest
 from models.sensor import Camera, sensor_factory
 from models.sensor_types import SensorTypes
 
+
 class TestCamera(unittest.TestCase):
     def setUp(self):
         self.share_dir = os.path.dirname(__file__)
@@ -11,7 +12,8 @@ class TestCamera(unittest.TestCase):
 
         self.cm_dir = os.path.join(self.sensor_dir, "cameras")
 
-        self.full_camera:Camera = sensor_factory(os.path.join(self.cm_dir, "full_camera.yaml"))
+        self.full_camera: Camera = sensor_factory(
+            os.path.join(self.cm_dir, "full_camera.yaml"))
 
     def test_sensor_factory(self):
         """sensor factory correctly makes camera"""
@@ -19,17 +21,62 @@ class TestCamera(unittest.TestCase):
 
     def test_camera_from_yaml(self):
         """camera creation from yaml"""
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_name.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_frame.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_parent.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_topic.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_no_type.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_no_name.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_no_frame.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_no_parent.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_no_topic.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_no_type.yaml"))
 
         # offset cases
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_long_offset.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_short_offset.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_none_in_offset.yaml"))
-        self.assertRaises(ValueError, sensor_factory, os.path.join(self.cm_dir, "cm_bad_offset.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_long_offset.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_short_offset.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_none_in_offset.yaml"))
+        self.assertRaises(
+            ValueError,
+            sensor_factory,
+            os.path.join(
+                self.cm_dir,
+                "cm_bad_offset.yaml"))
 
         cm0 = sensor_factory(os.path.join(self.cm_dir, "cm_no_offset.yaml"))
         self.assertEqual(cm0.offset[0], 0.0)

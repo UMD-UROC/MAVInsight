@@ -1,4 +1,4 @@
-#python imports
+# python imports
 from pathlib import Path
 import yaml
 
@@ -12,8 +12,13 @@ namespace = "viz"
 LOGGER = logging.get_logger('vehicle_launch_logger')
 initial_paths_overrides = ['chimera_d_4.yaml']
 
+
 def generate_launch_description():
     ld = LaunchDescription()
+
+    # Load global config
+    global_config = Path(get_package_share_directory(
+        package_name)) / 'resource' / 'global_node_config.yaml'
 
     vehicle_dir = Path(get_package_share_directory(package_name)) / 'vehicles'
     if len(initial_paths_overrides) != 0:
@@ -22,13 +27,14 @@ def generate_launch_description():
         initial_paths = [p for p in vehicle_dir.iterdir()]
     LOGGER.info(f"Initial paths: {[p.name for p in initial_paths]}")
 
-    nodes = build_nodes(initial_paths)
+    nodes = build_nodes(initial_paths, global_config)
     for node in nodes:
         ld.add_action(node)
 
     return ld
 
-def build_nodes(paths : list[Path]) -> list[Node]:
+
+def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
     LOGGER.debug("Starting build")
     # initialize set of processed paths and output list
     processed = set()
@@ -38,25 +44,35 @@ def build_nodes(paths : list[Path]) -> list[Node]:
         # capture and error check next path
         config_path = paths.pop()
         LOGGER.info(f"Starting processing on {config_path.as_posix()}")
-        assert isinstance(config_path, Path), f"Unrecognized build_nodes input type."
+        assert isinstance(
+            config_path, Path), f"Unrecognized build_nodes input type."
         if config_path.suffix != ".yaml":
-            LOGGER.error(f"Non-yaml config file detected: {config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
+            LOGGER.error(
+                f"Non-yaml config file detected: {
+                    config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
         if config_path in processed:
-            LOGGER.error(f"Potential circular path detected in config files.\nConfig file: {config_path.as_posix()} is contained by a sub-member.\nSkipping...")
+            LOGGER.error(
+                f"Potential circular path detected in config files.\nConfig file: {
+                    config_path.as_posix()} is contained by a sub-member.\nSkipping...")
             continue
         LOGGER.debug(f"non-circular path")
         # path is checkable, add to processed list
         processed.add(config_path)
 
-        # resolve filename to absolute path in either sensor config or vehicle config
+        # resolve filename to absolute path in either sensor config or vehicle
+        # config
         try:
             abs_path = resolve_config_file(config_path)
         except FileExistsError:
-            LOGGER.error(f"Duplicate filenames in Vehicle + Sensor dirs for file: {config_path.as_posix()}.\nSkipping...")
+            LOGGER.error(
+                f"Duplicate filenames in Vehicle + Sensor dirs for file: {
+                    config_path.as_posix()}.\nSkipping...")
             continue
-        if abs_path == None:
-            LOGGER.error(f"Cannot find file: {config_path.as_posix()} in any MAVInsight config folder.\nSkipping...")
+        if abs_path is None:
+            LOGGER.error(
+                f"Cannot find file: {
+                    config_path.as_posix()} in any MAVInsight config folder.\nSkipping...")
             continue
         LOGGER.debug(f"abs path acquired")
 
@@ -64,11 +80,14 @@ def build_nodes(paths : list[Path]) -> list[Node]:
         with open(abs_path.as_posix(), 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         if type(config) is not dict:
-            LOGGER.error(f"Error parsing file: {abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
+            LOGGER.error(
+                f"Error parsing file: {
+                    abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
         LOGGER.debug(f"file opened successfully")
 
-        # parse yaml down to the param layer (remove the layers of nesting above params)
+        # parse yaml down to the param layer (remove the layers of nesting
+        # above params)
         while len(config.keys()) == 1:
             config = config[next(iter(config))]
         LOGGER.debug(f"Base yaml acquired")
@@ -80,10 +99,14 @@ def build_nodes(paths : list[Path]) -> list[Node]:
             elif 'sensor_type' in config.keys():
                 ex = config['sensor_type']
             else:
-                LOGGER.error(f"Cannot determine the type of file: {abs_path.as_posix()}\nSkipping ...")
+                LOGGER.error(
+                    f"Cannot determine the type of file: {
+                        abs_path.as_posix()}\nSkipping ...")
                 continue
         except KeyError as e:
-            LOGGER.error(f"Error parsing config file: {abs_path.as_posix()}, {e}\nSkipping...")
+            LOGGER.error(
+                f"Error parsing config file: {
+                    abs_path.as_posix()}, {e}\nSkipping...")
             continue
         LOGGER.debug(f"File type identified")
 
@@ -93,7 +116,7 @@ def build_nodes(paths : list[Path]) -> list[Node]:
             executable=ex,
             name=abs_path.stem,
             namespace=namespace,
-            parameters=[abs_path.as_posix()],
+            parameters=[global_config.as_posix(), abs_path.as_posix()],
             output='screen'
         ))
 
@@ -104,7 +127,8 @@ def build_nodes(paths : list[Path]) -> list[Node]:
 
     return node_list
 
-def resolve_config_file(path:Path) -> Path | None:
+
+def resolve_config_file(path: Path) -> Path | None:
     if path.is_absolute():
         return path
 

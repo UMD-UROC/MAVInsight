@@ -3,8 +3,18 @@ from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'mavinsight'
-vehicle_configs = [f for f in glob(os.path.join("vehicles", "**/*"), recursive=True) if os.path.isfile(f)]
-sensor_configs = [f for f in glob(os.path.join("sensors", "**/*"), recursive=True) if os.path.isfile(f)]
+vehicle_configs = [
+    f for f in glob(
+        os.path.join(
+            "vehicles",
+            "**/*"),
+        recursive=True) if os.path.isfile(f)]
+sensor_configs = [
+    f for f in glob(
+        os.path.join(
+            "sensors",
+            "**/*"),
+        recursive=True) if os.path.isfile(f)]
 
 setup(
     name=package_name,
@@ -13,7 +23,8 @@ setup(
                            include=['mavinsight', 'mavinsight.*',
                                     'models', 'models.*']),
     data_files=[
-        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
+        ('share/ament_index/resource_index/packages',
+         ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (f'share/{package_name}/vehicles', vehicle_configs),
         (f'share/{package_name}/sensors', sensor_configs),

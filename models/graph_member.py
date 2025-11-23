@@ -3,6 +3,7 @@ import rclpy
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 
+
 class GraphMember(Node):
     """The base class/Node for all objects that could be displayed in the 3D panel of
     Foxglove.
@@ -20,10 +21,10 @@ class GraphMember(Node):
         The desired "tab" string. Used during string formatting of GraphMember and its
         subclasses.
     """
-    FRAME_NAME:str
-    DISPLAY_NAME:str
-    PARENT_FRAME:str
-    _tab_char:str
+    FRAME_NAME: str
+    DISPLAY_NAME: str
+    PARENT_FRAME: str
+    _tab_char: str
 
     # Constructors
     def __init__(self):
@@ -33,32 +34,36 @@ class GraphMember(Node):
 
         # Ingest ROS parameters. Notify user when defaults are being used.
         if self.has_parameter('frame_name'):
-            self.FRAME_NAME = self.get_parameter('frame_name').get_parameter_value().string_value
+            self.FRAME_NAME = self.get_parameter(
+                'frame_name').get_parameter_value().string_value
         else:
             self.default_parameter_warning("frame_name")
             self.FRAME_NAME = "base_link"
 
         if self.has_parameter('display_name'):
-            self.DISPLAY_NAME = self.get_parameter('display_name').get_parameter_value().string_value
+            self.DISPLAY_NAME = self.get_parameter(
+                'display_name').get_parameter_value().string_value
         else:
             self.default_parameter_warning("display_name")
             self.DISPLAY_NAME = "Default Vehicle Name"
 
         if self.has_parameter('parent_frame'):
-            self.PARENT_FRAME = self.get_parameter('parent_frame').get_parameter_value().string_value
+            self.PARENT_FRAME = self.get_parameter(
+                'parent_frame').get_parameter_value().string_value
         else:
             self.get_logger().info(f"parent_frame param not set, using standard default: \"map\"")
             self.PARENT_FRAME = "map"
 
         if self.has_parameter('tab_char'):
-            self._tab_char = self.get_parameter('tab_char').get_parameter_value().string_value
+            self._tab_char = self.get_parameter(
+                'tab_char').get_parameter_value().string_value
         else:
             self._tab_char = "|   "
 
         # initialize TF broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
 
-    def default_parameter_warning(self, param_name:str):
+    def default_parameter_warning(self, param_name: str):
         """Helper method to output a boilerplate warning indicating that a default
         parameter is being used in the absence of a defined valid parameter.
 
@@ -67,7 +72,8 @@ class GraphMember(Node):
         param_name : str
             The name of the parameter to be used in the warning.
         """
-        self.get_logger().warn(f"Parameter {param_name} not set in config file. using default")
+        self.get_logger().warn(
+            f"Parameter {param_name} not set in config file. using default")
 
     def __str__(self):
         return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"

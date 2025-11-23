@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class Platforms(Enum):
     """Enum of supported platforms"""
     DEFAULT = "default"

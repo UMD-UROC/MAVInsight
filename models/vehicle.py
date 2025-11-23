@@ -1,26 +1,16 @@
 # python imports
 from __future__ import annotations
-from scipy.spatial.transform import Rotation
-
-# ROS2 imports
-from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
 
 # ROS2 message imports
-from geometry_msgs.msg import Transform, TransformStamped, Vector3
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped, Transform, TransformStamped, Vector3
+from nav_msgs.msg import Odometry, Path
 from std_msgs.msg import Header
 
 # MAVInsight imports
 from models.graph_member import GraphMember
 from models.platforms import Platforms
+from models.qos_profiles import viz_qos
 
-# TODO: kick this out to a utils file
-viz_qos = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=1
-)
 
 class Vehicle(GraphMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -36,6 +26,7 @@ class Vehicle(GraphMember):
     sensors : list[Sensor]
         A list of `Sensors` attached to this vehicle.
     """
+
     LOCATION_TOPIC: str
     PLATFORM: Platforms
     SENSORS: list[str]
@@ -46,54 +37,113 @@ class Vehicle(GraphMember):
         self.get_logger().info(f"Ingesting Vehicle params...")
 
         # ingest ROS parameters. Notify user when defaults are being used
-        if self.has_parameter('location_topic'):
-            self.LOCATION_TOPIC = self.get_parameter('location_topic').get_parameter_value().string_value
+
+        # Global Refresh Rate
+        if self.has_parameter("refresh_rate"):
+            self.REFRESH_RATE = (
+                self.get_parameter(
+                    "refresh_rate").get_parameter_value().double_value
+            )
         else:
-            self.default_parameter_warning('location_topic')
+            self.default_parameter_warning("refresh_rate")
+            self.REFRESH_RATE = 60.0  # Hz
+
+        # Namespace
+        if self.has_parameter("namespace"):
+            namespace = (
+                self.get_parameter(
+                    "namespace").get_parameter_value().string_value
+            )
+        else:
+            self.default_parameter_warning("namespace")
+            namespace = "/uas/"
+
+        # Location Topic
+        if self.has_parameter("location_topic"):
+            self.LOCATION_TOPIC = (
+                self.get_parameter(
+                    "location_topic").get_parameter_value().string_value
+            )
+        else:
+            self.default_parameter_warning("location_topic")
             self.LOCATION_TOPIC = "gps"
 
+        # Platform Type
         if self.has_parameter("platform"):
-            self.PLATFORM = Platforms(self.get_parameter("platform").get_parameter_value().string_value)
+            self.PLATFORM = Platforms(
+                self.get_parameter(
+                    "platform").get_parameter_value().string_value
+            )
         else:
-            self.default_parameter_warning('platform')
+            self.default_parameter_warning("platform")
             self.PLATFORM = Platforms.DEFAULT
 
+        # Sensors
         if self.has_parameter("sensors"):
-            self.SENSORS = list(self.get_parameter("sensors").get_parameter_value().string_array_value)
+            self.SENSORS = list(
+                self.get_parameter(
+                    "sensors").get_parameter_value().string_array_value
+            )
         else:
             self.SENSORS = []
 
-        # initialize subscribers
-        self.create_subscription(Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos) # TODO QOS profile.
+        # Initialize subscribers
+        self.create_subscription(
+            Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos
+        )
+        self.create_subscription(
+            PoseStamped, self.LOCATION_TOPIC, self.pose_callback, viz_qos
+        )
 
-    def publish_position(self, msg:Odometry):
+        # Initialize publishers
+        self.path_pub = self.create_publisher(
+            Path, f"{namespace}flight-path", 1)
+
+        # Internal storage for path visualizer
+        self.path = Path()
+        self.path.header.frame_id = self.PARENT_FRAME
+        self.latest_pose = None
+
+        # Publisher timers
+        self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
+
+    def publish_position(self, msg: Odometry):
         # header
         head_out = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME)
 
         # transform
         pos_in = msg.pose.pose.position
         pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
-        tf_out = Transform(translation=pos_out, rotation=msg.pose.pose.orientation)
+        tf_out = Transform(
+            translation=pos_out,
+            rotation=msg.pose.pose.orientation)
 
         # build TF
         t = TransformStamped(
-            header = head_out,
-            child_frame_id = self.FRAME_NAME,
-            transform = tf_out
+            header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out
         )
 
         self.tf_broadcaster.sendTransform(t)
 
-    def _format(self, tab_depth:int=0) -> str:
+    def pose_callback(self, msg: PoseStamped):
+        self.path.poses.append(msg)
+        self.path.header.stamp = msg.header.stamp
+
+    def publish_path(self):
+        if self.path.poses:
+            self.path_pub.publish(self.path)
+
+    def _format(self, tab_depth: int = 0) -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char
         sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
-        return ( f"Vehicle Structure ({self.get_name()}):\n" +
-            f"{t1}{self.DISPLAY_NAME} | Vehicle ({self.PLATFORM.name})\n" +
-            f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n" +
-            f"{t2}Location Topic: {self.LOCATION_TOPIC}\n" +
-            f"{t2}Sensors: {sensors_string}" +
-            ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
+        return (
+            f"Vehicle Structure ({self.get_name()}):\n"
+            + f"{t1}{self.DISPLAY_NAME} | Vehicle ({self.PLATFORM.name})\n"
+            + f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
+            + f"{t2}Location Topic: {self.LOCATION_TOPIC}\n"
+            + f"{t2}Sensors: {sensors_string}"
+            + ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
         )
 
     def __str__(self):
