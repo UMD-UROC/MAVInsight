@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger('vehicle_launch_logger')
-initial_paths_overrides = ['chimera_d_4.yaml']
+initial_paths_overrides = ['px4_sitl.yaml']
 
 
 def generate_launch_description():
@@ -47,14 +47,10 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         assert isinstance(
             config_path, Path), f"Unrecognized build_nodes input type."
         if config_path.suffix != ".yaml":
-            LOGGER.error(
-                f"Non-yaml config file detected: {
-                    config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
+            LOGGER.error(f"Non-yaml config file detected: {config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
         if config_path in processed:
-            LOGGER.error(
-                f"Potential circular path detected in config files.\nConfig file: {
-                    config_path.as_posix()} is contained by a sub-member.\nSkipping...")
+            LOGGER.error(f"Potential circular path detected in config files.\nConfig file: {config_path.as_posix()} is contained by a sub-member.\nSkipping...")
             continue
         LOGGER.debug(f"non-circular path")
         # path is checkable, add to processed list
@@ -65,14 +61,10 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         try:
             abs_path = resolve_config_file(config_path)
         except FileExistsError:
-            LOGGER.error(
-                f"Duplicate filenames in Vehicle + Sensor dirs for file: {
-                    config_path.as_posix()}.\nSkipping...")
+            LOGGER.error(f"Duplicate filenames in Vehicle + Sensor dirs for file: {config_path.as_posix()}.\nSkipping...")
             continue
         if abs_path is None:
-            LOGGER.error(
-                f"Cannot find file: {
-                    config_path.as_posix()} in any MAVInsight config folder.\nSkipping...")
+            LOGGER.error(f"Cannot find file: {config_path.as_posix()} in any MAVInsight config folder.\nSkipping...")
             continue
         LOGGER.debug(f"abs path acquired")
 
@@ -80,9 +72,7 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         with open(abs_path.as_posix(), 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         if type(config) is not dict:
-            LOGGER.error(
-                f"Error parsing file: {
-                    abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
+            LOGGER.error(f"Error parsing file: {abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
         LOGGER.debug(f"file opened successfully")
 
@@ -99,14 +89,10 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
             elif 'sensor_type' in config.keys():
                 ex = config['sensor_type']
             else:
-                LOGGER.error(
-                    f"Cannot determine the type of file: {
-                        abs_path.as_posix()}\nSkipping ...")
+                LOGGER.error(f"Cannot determine the type of file: {abs_path.as_posix()}\nSkipping ...")
                 continue
         except KeyError as e:
-            LOGGER.error(
-                f"Error parsing config file: {
-                    abs_path.as_posix()}, {e}\nSkipping...")
+            LOGGER.error(f"Error parsing config file: {abs_path.as_posix()}, {e}\nSkipping...")
             continue
         LOGGER.debug(f"File type identified")
 

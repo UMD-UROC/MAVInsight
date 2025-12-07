@@ -1,8 +1,13 @@
 # python imports
 from __future__ import annotations
+from scipy.spatial.transform import Rotation
+
+# ROS2 imports
+import rclpy
+from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
 
 # ROS2 message imports
-from geometry_msgs.msg import PoseStamped, Transform, TransformStamped, Vector3
+from geometry_msgs.msg import PoseStamped, Transform, TransformStamped, Vector3, Quaternion
 from nav_msgs.msg import Odometry, Path
 from std_msgs.msg import Header
 
@@ -10,6 +15,9 @@ from std_msgs.msg import Header
 from models.graph_member import GraphMember
 from models.platforms import Platforms
 from models.qos_profiles import viz_qos
+
+# PX4 Msg
+from px4_msgs.msg import VehicleLocalPosition, VehicleOdometry  # type:ignore
 
 
 class Vehicle(GraphMember):
@@ -87,17 +95,26 @@ class Vehicle(GraphMember):
         else:
             self.SENSORS = []
 
+        # Message Schema
+        if self.has_parameter("message_schema"):
+            msg_schema_str = self.get_parameter(
+                "message_schema").get_parameter_value().string_value
+            if msg_schema_str.lower() == "px4_msgs":
+                self.LOCATION_MSG_TYPE = VehicleOdometry
+            else:
+                self.LOCATION_MSG_TYPE = Odometry
+        else:
+            self.default_parameter_warning('message_schema')
+            self.LOCATION_MSG_TYPE = Odometry
+
         # Initialize subscribers
         self.create_subscription(
-            Odometry, self.LOCATION_TOPIC, self.publish_position, viz_qos
-        )
-        self.create_subscription(
-            PoseStamped, self.LOCATION_TOPIC, self.pose_callback, viz_qos
+            self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos
         )
 
         # Initialize publishers
         self.path_pub = self.create_publisher(
-            Path, f"{namespace}flight-path", 1)
+            Path, f"{namespace}flightPath", 1)
 
         # Internal storage for path visualizer
         self.path = Path()
@@ -107,16 +124,42 @@ class Vehicle(GraphMember):
         # Publisher timers
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
 
-    def publish_position(self, msg: Odometry):
+    def publish_position(self, msg: Odometry | VehicleOdometry):
         # header
-        head_out = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME)
+        # TODO: double check time sync between message schemas
+        head_out = Header(stamp=self.get_clock().now().to_msg(),
+                          frame_id=self.PARENT_FRAME)
+
+        path_update = PoseStamped()
+        path_update.header = head_out
 
         # transform
-        pos_in = msg.pose.pose.position
-        pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
-        tf_out = Transform(
-            translation=pos_out,
-            rotation=msg.pose.pose.orientation)
+        if self.LOCATION_MSG_TYPE == VehicleOdometry:
+            assert type(msg) == VehicleOdometry
+            pos_in = msg.position
+            # TODO: transform from NED to ENU
+            pos_out = Vector3(x=float(pos_in[0]), y=float(
+                pos_in[1]), z=float(pos_in[2]))
+            q_out = Quaternion(x=float(msg.q[1]), y=float(
+                msg.q[2]), z=float(msg.q[3]), w=float(msg.q[0]))
+            tf_out = Transform(translation=pos_out, rotation=q_out)
+
+            path_update.pose.position.x = float(pos_in[0])
+            path_update.pose.position.y = float(pos_in[1])
+            path_update.pose.position.z = float(pos_in[2])
+            path_update.pose.orientation = q_out
+
+        else:
+            assert type(msg) == Odometry
+            pos_in = msg.pose.pose.position
+            pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
+            tf_out = Transform(translation=pos_out,
+                               rotation=msg.pose.pose.orientation)
+
+            path_update.pose.position.x = float(pos_in.x)
+            path_update.pose.position.y = float(pos_in.y)
+            path_update.pose.position.z = float(pos_in.z)
+            path_update.pose.orientation = msg.pose.pose.orientation
 
         # build TF
         t = TransformStamped(
@@ -125,9 +168,10 @@ class Vehicle(GraphMember):
 
         self.tf_broadcaster.sendTransform(t)
 
-    def pose_callback(self, msg: PoseStamped):
-        self.path.poses.append(msg)
-        self.path.header.stamp = msg.header.stamp
+        # build PoseStamped for path
+        # Path update
+        self.path.poses.append(path_update)
+        self.path.header.stamp = path_update.header.stamp
 
     def publish_path(self):
         if self.path.poses:

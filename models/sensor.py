@@ -94,9 +94,7 @@ class Sensor(GraphMember):
         if len(self.OFFSET) == 3:
             static_frame_name = f"{self.FRAME_NAME}_offset"
             self.get_logger().info(
-                f"Received valid [x,y,z] sensor offset: {
-                    self.OFFSET}m. Building new static frame: {static_frame_name}"
-            )
+                f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static frame: {static_frame_name}")
             self.tf_static_broadcaster = StaticTransformBroadcaster(self)
 
             # header
@@ -129,10 +127,7 @@ class Sensor(GraphMember):
         return (
             f"{t1}{self.DISPLAY_NAME} | Sensor {self.SENSOR_TYPE.name}\n"
             + f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
-            + f"{t2}Static offset from parent: (x: {
-                self.OFFSET[0]}, y: {
-                self.OFFSET[1]}, z: {
-                self.OFFSET[2]})\n"
+            + f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n"
             + extra_fields
             + f"{t2}Sensors: {sensors_string}"
             + ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
@@ -173,8 +168,7 @@ class Camera(Sensor):
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
         camera_fields = (
-            f"{t}Camera info topic: {
-                self.CAM_INFO_TOPIC}\n"
+            f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n"
             + extra_fields
         )
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
@@ -277,14 +271,10 @@ class Rangefinder(Sensor):
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
         rangefinder_fields = (
-            f"{t}Range topic: {
-                self.RANGE_TOPIC}\n"
+            f"{t}Range topic: {self.RANGE_TOPIC}\n"
             + extra_fields
         )
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
-
-    def __str__(self):
-        return self._format()
 
     def __str__(self):
         return self._format()
