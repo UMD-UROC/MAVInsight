@@ -1,6 +1,7 @@
 /**/*:
   chimera_d_4:
     ros__parameters:
+      coord_frame: enu-flu
       display_name: Chimera D4
       frame_name: d4_base_link
       location_topic: "/uas4/global_position/local"
