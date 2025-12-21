@@ -55,17 +55,15 @@ class Sensor(GraphMember):
             except ValueError as e:
                 self.OFFSET = []
                 self.get_logger().error(
-                    f"Unable to interpret offset param elements as floats. Using no-offset default.\n"
-                    + f"Received: {offset_param_val}\n"
-                    + f"Error: {e}"
-                )
+                    f"Unable to interpret offset param elements as floats. Using no-offset default.\n" +
+                    f"Received: {offset_param_val}\n" +
+                    f"Error: {e}")
 
             if len(self.OFFSET) != 3:
                 self.OFFSET = []
                 self.get_logger().error(
-                    f"Offset param must be exactly 3 elements long. Using, no-offset default.\n"
-                    + f"Received: {offset_param_val}"
-                )
+                    f"Offset param must be exactly 3 elements long. Using, no-offset default.\n" +
+                    f"Received: {offset_param_val}")
             else:
                 if sum(self.OFFSET) == 0.0:
                     self.OFFSET = []
@@ -94,13 +92,14 @@ class Sensor(GraphMember):
         if len(self.OFFSET) == 3:
             static_frame_name = f"{self.FRAME_NAME}_offset"
             self.get_logger().info(
-                f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static frame: {static_frame_name}")
+                f"Received valid [x,y,z] sensor offset: {
+                    self.OFFSET}m. Building new static frame: {static_frame_name}")
             self.tf_static_broadcaster = StaticTransformBroadcaster(self)
 
             # header
             head_out = Header(
-                stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME
-            )
+                stamp=self.get_clock().now().to_msg(),
+                frame_id=self.PARENT_FRAME)
 
             # transform
             # assumed no static rotational offset, for now. TODO
@@ -113,8 +112,9 @@ class Sensor(GraphMember):
 
             # build tf
             s_t = TransformStamped(
-                header=head_out, child_frame_id=static_frame_name, transform=tf_out
-            )
+                header=head_out,
+                child_frame_id=static_frame_name,
+                transform=tf_out)
             self.tf_static_broadcaster.sendTransform(s_t)
 
             # allow sub-members to attach to this new offset frame
@@ -125,13 +125,23 @@ class Sensor(GraphMember):
         t2 = t1 + self._tab_char
         sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
         return (
-            f"{t1}{self.DISPLAY_NAME} | Sensor {self.SENSOR_TYPE.name}\n"
-            + f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
-            + f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n"
-            + extra_fields
-            + f"{t2}Sensors: {sensors_string}"
-            + ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
-        )
+            f"{t1}{
+                self.DISPLAY_NAME} | Sensor {
+                self.SENSOR_TYPE.name}\n" +
+            f"{t2}Transform: {
+                self.PARENT_FRAME} -> {
+                    self.FRAME_NAME}\n" +
+            f"{t2}Static offset from parent: (x: {
+                self.OFFSET[0]}, y: {
+                self.OFFSET[1]}, z: {
+                self.OFFSET[2]})\n" +
+            extra_fields +
+            f"{t2}Sensors: {sensors_string}" +
+            (
+                "\n".join(
+                    t2 +
+                    self._tab_char +
+                    s for s in self.SENSORS)))
 
     def __str__(self):
         return self._format()

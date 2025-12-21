@@ -76,7 +76,10 @@ class GraphMember(Node):
             f"Parameter {param_name} not set in config file. using default")
 
     def __str__(self):
-        return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
+        return f"{
+            self.DISPLAY_NAME}\nTransform: {
+            self.PARENT_FRAME} -> {
+            self.FRAME_NAME}\n"
 
     @classmethod
     def main(cls, args=None):
