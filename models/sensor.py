@@ -252,6 +252,31 @@ class Gimbal(Sensor):
         )
         self.tf_broadcaster.sendTransform(tf)
 
+        # create native coordinate frame if present TODO revisit after establishing basic frame
+        # self.get_logger().info(f"Sensor Input Coordinate Frame: {self.COORD_FRAME_TF}")
+        # if self.COORD_FRAME_TF == 'enu-flu':
+        #     pass
+        # elif (self.COORD_FRAME_TF in ['ned-frd']):
+        #     native_frame_name = f"{self.FRAME_NAME}_{self.COORD_FRAME_TF}"
+        #     self.get_logger().info(f"Recognized non-enu/flu coord frame. Building new static tf endpoint with child frame: {native_frame_name}")
+        #     if self.COORD_FRAME_TF == 'ned-frd':
+
+        #         header = Header(frame_id=self.PARENT_FRAME)
+
+        #         (x, y, z, w) = R_frd_flu
+        #         ros_quat = Quaternion(x=x, y=y, z=z, w=w)
+
+        #         transform = Transform(rotation=ros_quat)
+
+        #         native_frame=TransformStamped(
+        #             header=header,
+        #             child_frame_id=native_frame_name,
+        #             transform=transform
+        #         )
+        #     self.tf_static_broadcaster.sendTransform(native_frame)
+        # else:
+        #     self.get_logger().warn(f"Unrecognized coordinate frame: {self.COORD_FRAME_TF}. Skipping Native Frame creation.")
+
     def publish_orientation(self, msg : GimbalDeviceAttitudeStatus):
         # NOTE: GimbalDeviceAttitudeStatus message does NOT reflect commanded flags, only available flags.
         # enu -> d4_base_link -> gimbal_mount -> gimbal_ref_frame -> gimbal_frame
