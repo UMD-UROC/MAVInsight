@@ -4,7 +4,6 @@ from models.platforms import Platforms
 from models.sensor import Camera, Gimbal, Rangefinder, SensorTypes
 from models.vehicle import Vehicle, vehicle_factory
 
-
 class TestVehicle(unittest.TestCase):
     def setUp(self):
         self.share_dir = os.path.dirname(__file__)
@@ -12,10 +11,8 @@ class TestVehicle(unittest.TestCase):
         self.vehicle_dir = os.path.join(self.share_dir, "vehicles")
         self.bad_v_dir = os.path.join(self.vehicle_dir, "bad_vehicles")
 
-        self.full_vehicle: Vehicle = vehicle_factory(
-            os.path.join(self.vehicle_dir, "full_vehicle.yaml"))
-        self.minimum_vehicle: Vehicle = vehicle_factory(
-            os.path.join(self.vehicle_dir, "minimum_vehicle.yaml"))
+        self.full_vehicle: Vehicle = vehicle_factory(os.path.join(self.vehicle_dir, "full_vehicle.yaml"))
+        self.minimum_vehicle: Vehicle = vehicle_factory(os.path.join(self.vehicle_dir, "minimum_vehicle.yaml"))
 
     def test_vehicle_factory(self):
         """vehicle factory correctly makes or doesnt make gimbal"""
@@ -24,56 +21,27 @@ class TestVehicle(unittest.TestCase):
 
     def test_vehicle_from_yaml(self):
         """vehicle creation from yaml"""
-        self.assertRaises(
-            ValueError,
-            vehicle_factory,
-            os.path.join(
-                self.bad_v_dir,
-                "v_no_name.yaml"))
-        self.assertRaises(
-            ValueError,
-            vehicle_factory,
-            os.path.join(
-                self.bad_v_dir,
-                "v_no_frame.yaml"))
-        self.assertRaises(
-            ValueError,
-            vehicle_factory,
-            os.path.join(
-                self.bad_v_dir,
-                "v_no_topic.yaml"))
-        self.assertRaises(
-            ValueError,
-            vehicle_factory,
-            os.path.join(
-                self.bad_v_dir,
-                "v_no_platform.yaml"))
+        self.assertRaises(ValueError, vehicle_factory, os.path.join(self.bad_v_dir, "v_no_name.yaml"))
+        self.assertRaises(ValueError, vehicle_factory, os.path.join(self.bad_v_dir, "v_no_frame.yaml"))
+        self.assertRaises(ValueError, vehicle_factory, os.path.join(self.bad_v_dir, "v_no_topic.yaml"))
+        self.assertRaises(ValueError, vehicle_factory, os.path.join(self.bad_v_dir, "v_no_platform.yaml"))
 
         # no parent case (guarded)
         vp = vehicle_factory(os.path.join(self.bad_v_dir, "v_no_parent.yaml"))
         self.assertEqual(vp.parent_frame, "map")
 
         # no sensors case (guarded)
-        vns = vehicle_factory(
-            os.path.join(
-                self.bad_v_dir,
-                "v_no_sensors.yaml"))
+        vns = vehicle_factory(os.path.join(self.bad_v_dir, "v_no_sensors.yaml"))
         self.assertIsInstance(vns.sensors, list)
         self.assertEqual(len(vns.sensors), 0)
 
         # empty sensors case (guarded)
-        ves = vehicle_factory(
-            os.path.join(
-                self.bad_v_dir,
-                "v_empty_sensors.yaml"))
+        ves = vehicle_factory(os.path.join(self.bad_v_dir, "v_empty_sensors.yaml"))
         self.assertIsInstance(ves.sensors, list)
         self.assertEqual(len(ves.sensors), 0)
 
         # minimum vehicle case (all guarded params removed)
-        vm = vehicle_factory(
-            os.path.join(
-                self.vehicle_dir,
-                "minimum_vehicle.yaml"))
+        vm = vehicle_factory(os.path.join(self.vehicle_dir, "minimum_vehicle.yaml"))
         self.assertEqual(vm.name, "Minimum Vehicle")
         self.assertEqual(vm.frame_name, "minimum_vehicle_base_link")
         self.assertEqual(vm.location_topic, "/minimum/vehicle/fix")
@@ -84,9 +52,7 @@ class TestVehicle(unittest.TestCase):
 
         # full vehicle checking
         self.assertEqual(self.full_vehicle.name, "Full Vehicle")
-        self.assertEqual(
-            self.full_vehicle.frame_name,
-            "full_vehicle_base_link")
+        self.assertEqual(self.full_vehicle.frame_name, "full_vehicle_base_link")
         self.assertEqual(self.full_vehicle.location_topic, "/full/vehicle/fix")
         self.assertEqual(self.full_vehicle.parent_frame, "full_vehicle_parent")
         self.assertEqual(self.full_vehicle.platform, Platforms.QUAD_COPTER)

@@ -17,8 +17,7 @@ def generate_launch_description():
     ld = LaunchDescription()
 
     # Load global config
-    global_config = Path(get_package_share_directory(
-        package_name)) / 'resource' / 'global_node_config.yaml'
+    global_config = Path(get_package_share_directory(package_name)) / 'resource' / 'global_node_config.yaml'
 
     vehicle_dir = Path(get_package_share_directory(package_name)) / 'vehicles'
     if len(initial_paths_overrides) != 0:
@@ -33,7 +32,6 @@ def generate_launch_description():
 
     return ld
 
-
 def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
     LOGGER.debug("Starting build")
     # initialize set of processed paths and output list
@@ -44,8 +42,7 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         # capture and error check next path
         config_path = paths.pop()
         LOGGER.info(f"Starting processing on {config_path.as_posix()}")
-        assert isinstance(
-            config_path, Path), f"Unrecognized build_nodes input type."
+        assert isinstance(config_path, Path), f"Unrecognized build_nodes input type."
         if config_path.suffix != ".yaml":
             LOGGER.error(f"Non-yaml config file detected: {config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
@@ -56,8 +53,7 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         # path is checkable, add to processed list
         processed.add(config_path)
 
-        # resolve filename to absolute path in either sensor config or vehicle
-        # config
+        # resolve filename to absolute path in either sensor config or vehicle config
         try:
             abs_path = resolve_config_file(config_path)
         except FileExistsError:
@@ -76,8 +72,7 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
             continue
         LOGGER.debug(f"file opened successfully")
 
-        # parse yaml down to the param layer (remove the layers of nesting
-        # above params)
+        # parse yaml down to the param layer (remove the layers of nesting above params)
         while len(config.keys()) == 1:
             config = config[next(iter(config))]
         LOGGER.debug(f"Base yaml acquired")
@@ -112,7 +107,6 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
             paths.append(Path(sens))
 
     return node_list
-
 
 def resolve_config_file(path: Path) -> Path | None:
     if path.is_absolute():

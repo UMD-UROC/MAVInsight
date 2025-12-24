@@ -1,6 +1,5 @@
 # python imports
 from __future__ import annotations
-
 from typing import Optional
 
 # ROS2 message imports
@@ -46,10 +45,7 @@ class Sensor(GraphMember):
         # ingest ROS parameters
         # notify user when defaults are being used
         if self.has_parameter("offset"):
-            offset_param_val = (
-                self.get_parameter(
-                    "offset").get_parameter_value().double_array_value
-            )
+            offset_param_val = self.get_parameter("offset").get_parameter_value().double_array_value
             try:
                 self.OFFSET = [float(f) for f in offset_param_val]
             except ValueError as e:
@@ -84,8 +80,7 @@ class Sensor(GraphMember):
 
         if self.has_parameter("sensors"):
             self.SENSORS = list(
-                self.get_parameter(
-                    "sensors").get_parameter_value().string_array_value
+                self.get_parameter("sensors").get_parameter_value().string_array_value
             )
         else:
             self.SENSORS = []
@@ -93,14 +88,11 @@ class Sensor(GraphMember):
         # broadcast the static transform of an offset, if one is present
         if len(self.OFFSET) == 3:
             static_frame_name = f"{self.FRAME_NAME}_offset"
-            self.get_logger().info(
-                f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static frame: {static_frame_name}")
+            self.get_logger().info(f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static frame: {static_frame_name}")
             self.tf_static_broadcaster = StaticTransformBroadcaster(self)
 
             # header
-            head_out = Header(
-                stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME
-            )
+            head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
 
             # transform
             # assumed no static rotational offset, for now. TODO
@@ -112,9 +104,7 @@ class Sensor(GraphMember):
             static_frame_name = f"{self.FRAME_NAME}_offset"
 
             # build tf
-            s_t = TransformStamped(
-                header=head_out, child_frame_id=static_frame_name, transform=tf_out
-            )
+            s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
             self.tf_static_broadcaster.sendTransform(s_t)
 
             # allow sub-members to attach to this new offset frame
@@ -136,7 +126,6 @@ class Sensor(GraphMember):
     def __str__(self):
         return self._format()
 
-
 class Camera(Sensor):
     """Class/Node defining a Camera and how/what visualization info will be published for
     Foxglove.
@@ -157,10 +146,7 @@ class Camera(Sensor):
         # ingest ROS parameters
         # notify user when defaults are being used
         if self.has_parameter("cam_info_topic"):
-            self.CAM_INFO_TOPIC = (
-                self.get_parameter(
-                    "cam_info_topic").get_parameter_value().string_value
-            )
+            self.CAM_INFO_TOPIC = self.get_parameter("cam_info_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("cam_info_topic")
             self.CAM_INFO_TOPIC = "camera_info"
@@ -175,7 +161,6 @@ class Camera(Sensor):
 
     def __str__(self):
         return self._format()
-
 
 class Gimbal(Sensor):
     """Class/Node defining a Gimbal and how/what visualization info will be published for
@@ -197,11 +182,7 @@ class Gimbal(Sensor):
         # ingest ROS parameters
         # notify user when defaults are being used
         if self.has_parameter("orientation_topic"):
-            self.ORIENTATION_TOPIC = (
-                self.get_parameter("orientation_topic")
-                .get_parameter_value()
-                .string_value
-            )
+            self.ORIENTATION_TOPIC = self.get_parameter("orientation_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("orientation_topic")
             self.ORIENTATION_TOPIC = "gimbal_orientation"
@@ -223,22 +204,17 @@ class Gimbal(Sensor):
         tf_out = Transform(rotation=msg.q)
 
         # build TF
-        t = TransformStamped(
-            header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out
-        )
+        t = TransformStamped(header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out)
 
         self.tf_broadcaster.sendTransform(t)
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
-        gimbal_fields = (
-            f"{t}Orientation topic: {self.ORIENTATION_TOPIC}\n" + extra_fields
-        )
+        gimbal_fields = f"{t}Orientation topic: {self.ORIENTATION_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=gimbal_fields)
 
     def __str__(self):
         return self._format()
-
 
 class Rangefinder(Sensor):
     """Class/Node defining a Rangefinder and how/what visualization info will be published
@@ -260,10 +236,7 @@ class Rangefinder(Sensor):
         # ingest ROS parameters
         # notify user when defaults are being used.
         if self.has_parameter("range_topic"):
-            self.RANGE_TOPIC = (
-                self.get_parameter(
-                    "range_topic").get_parameter_value().string_value
-            )
+            self.RANGE_TOPIC = self.get_parameter("range_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("range_topic")
             self.RANGE_TOPIC = "rangefinder"
