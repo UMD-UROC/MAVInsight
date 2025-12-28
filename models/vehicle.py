@@ -195,6 +195,14 @@ class Vehicle(GraphMember):
             path_update.pose.position.z = float(pos_in.z)
             path_update.pose.orientation = msg.pose.pose.orientation
 
+            # Extract velocity from Odometry message
+            vel_in = msg.twist.twist.linear
+            self.drone_velocity = [
+                float(
+                    vel_in.x), float(
+                    vel_in.y), float(
+                    vel_in.z)]
+
             self.drone_pos = [
                 float(
                     pos_in.x), float(
