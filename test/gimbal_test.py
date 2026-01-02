@@ -15,11 +15,14 @@ class TestGimbal(unittest.TestCase):
         self.rf_dir = os.path.join(self.sensor_dir, "rangefinders")
 
         self.full_camera: Camera = sensor_factory(
-            os.path.join(self.cm_dir, "full_camera.yaml"))
+            os.path.join(self.cm_dir, "full_camera.yaml")
+        )
         self.full_gimbal: Gimbal = sensor_factory(
-            os.path.join(self.gb_dir, "full_gimbal.yaml"))
+            os.path.join(self.gb_dir, "full_gimbal.yaml")
+        )
         self.full_rangefinder: Rangefinder = sensor_factory(
-            os.path.join(self.rf_dir, "full_rangefinder.yaml"))
+            os.path.join(self.rf_dir, "full_rangefinder.yaml")
+        )
 
     def test_sensor_factory(self):
         """sensor factory correctly makes gimbal"""
@@ -28,61 +31,38 @@ class TestGimbal(unittest.TestCase):
     def test_gimbal_from_yaml(self):
         """gimbal creation from yaml"""
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_no_name.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_name.yaml")
+        )
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_no_frame.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_frame.yaml")
+        )
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_no_parent.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_parent.yaml")
+        )
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_no_topic.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_topic.yaml")
+        )
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_no_type.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_no_type.yaml")
+        )
 
         # offset cases
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_long_offset.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_long_offset.yaml")
+        )
         self.assertRaises(
             ValueError,
             sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_short_offset.yaml"))
+            os.path.join(self.gb_dir, "gb_short_offset.yaml"),
+        )
         self.assertRaises(
             ValueError,
             sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_none_in_offset.yaml"))
+            os.path.join(self.gb_dir, "gb_none_in_offset.yaml"),
+        )
         self.assertRaises(
-            ValueError,
-            sensor_factory,
-            os.path.join(
-                self.gb_dir,
-                "gb_bad_offset.yaml"))
+            ValueError, sensor_factory, os.path.join(self.gb_dir, "gb_bad_offset.yaml")
+        )
 
         gb0 = sensor_factory(os.path.join(self.gb_dir, "gb_no_offset.yaml"))
         self.assertEqual(gb0.offset[0], 0.0)

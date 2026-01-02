@@ -57,47 +57,53 @@ class Vehicle(GraphMember):
 
         # Global Refresh Rate
         if self.has_parameter("refresh_rate"):
-            self.REFRESH_RATE = (self.get_parameter(
-                "refresh_rate").get_parameter_value().double_value)
+            self.REFRESH_RATE = (
+                self.get_parameter("refresh_rate").get_parameter_value().double_value
+            )
         else:
             self.default_parameter_warning("refresh_rate")
             self.REFRESH_RATE = 60.0  # Hz
 
         # Namespace
         if self.has_parameter("namespace"):
-            namespace = (self.get_parameter(
-                "namespace").get_parameter_value().string_value)
+            namespace = (
+                self.get_parameter("namespace").get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning("namespace")
             namespace = "/uas/"
 
         # Location Topic
         if self.has_parameter("location_topic"):
-            self.LOCATION_TOPIC = (self.get_parameter(
-                "location_topic").get_parameter_value().string_value)
+            self.LOCATION_TOPIC = (
+                self.get_parameter("location_topic").get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning("location_topic")
             self.LOCATION_TOPIC = "gps"
 
         # Platform Type
         if self.has_parameter("platform"):
-            self.PLATFORM = Platforms(self.get_parameter(
-                "platform").get_parameter_value().string_value)
+            self.PLATFORM = Platforms(
+                self.get_parameter("platform").get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning("platform")
             self.PLATFORM = Platforms.DEFAULT
 
         # Sensors
         if self.has_parameter("sensors"):
-            self.SENSORS = list(self.get_parameter(
-                "sensors").get_parameter_value().string_array_value)
+            self.SENSORS = list(
+                self.get_parameter("sensors").get_parameter_value().string_array_value
+            )
         else:
             self.SENSORS = []
 
         # Message Schema
         if self.has_parameter("message_schema"):
-            msg_schema_str = (self.get_parameter(
-                "message_schema").get_parameter_value().string_value)
+            msg_schema_str = (
+                self.get_parameter("message_schema").get_parameter_value().string_value
+            )
             if msg_schema_str.lower() == "px4_msgs":
                 self.LOCATION_MSG_TYPE = VehicleOdometry
             else:
@@ -108,18 +114,15 @@ class Vehicle(GraphMember):
 
         # Initialize subscribers
         self.create_subscription(
-            self.LOCATION_MSG_TYPE,
-            self.LOCATION_TOPIC,
-            self.publish_position,
-            viz_qos)
+            self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos
+        )
 
         # Initialize publishers
-        self.path_pub = self.create_publisher(
-            Path, f"{namespace}flightPath", 1)
+        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", 1)
 
         # Publisher for velocity vector visualization markers
         self.velocity_vector_marker_pub = self.create_publisher(
-            Marker, f"{namespace}velocity-vector", 1
+            Marker, f"{namespace}velocityVector", 1
         )
 
         # Internal storage for path visualizer
@@ -135,9 +138,7 @@ class Vehicle(GraphMember):
 
         # Publisher timers
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
-        self.create_timer(
-            1.0 / self.REFRESH_RATE,
-            self.publish_velocity_vector)
+        self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
     def publish_position(self, msg: Odometry | VehicleOdometry):
         # header
@@ -176,19 +177,13 @@ class Vehicle(GraphMember):
             # TODO: Migrate to new function
             self.drone_velocity = [float(v) for v in msg.velocity]
 
-            self.drone_pos = [
-                float(
-                    pos_in[0]), float(
-                    pos_in[1]), float(
-                    pos_in[2])]
+            self.drone_pos = [float(pos_in[0]), float(pos_in[1]), float(pos_in[2])]
 
         else:
             assert isinstance(msg, Odometry)
             pos_in = msg.pose.pose.position
             pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
-            tf_out = Transform(
-                translation=pos_out,
-                rotation=msg.pose.pose.orientation)
+            tf_out = Transform(translation=pos_out, rotation=msg.pose.pose.orientation)
 
             path_update.pose.position.x = float(pos_in.x)
             path_update.pose.position.y = float(pos_in.y)
@@ -197,17 +192,9 @@ class Vehicle(GraphMember):
 
             # Extract velocity from Odometry message
             vel_in = msg.twist.twist.linear
-            self.drone_velocity = [
-                float(
-                    vel_in.x), float(
-                    vel_in.y), float(
-                    vel_in.z)]
+            self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
-            self.drone_pos = [
-                float(
-                    pos_in.x), float(
-                    pos_in.y), float(
-                    pos_in.z)]
+            self.drone_pos = [float(pos_in.x), float(pos_in.y), float(pos_in.z)]
 
         # build TF
         t = TransformStamped(
@@ -247,9 +234,8 @@ class Vehicle(GraphMember):
         velocity_vector_marker.action = Marker.ADD
 
         start_point = Point(
-            x=self.drone_pos[0],
-            y=self.drone_pos[1],
-            z=self.drone_pos[2])
+            x=self.drone_pos[0], y=self.drone_pos[1], z=self.drone_pos[2]
+        )
 
         end_point = Point(x=target_pos[0], y=target_pos[1], z=target_pos[2])
         velocity_vector_marker.points = [start_point, end_point]

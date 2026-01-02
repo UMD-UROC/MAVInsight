@@ -21,6 +21,7 @@ class GraphMember(Node):
         The desired "tab" string. Used during string formatting of GraphMember and its
         subclasses.
     """
+
     FRAME_NAME: str
     DISPLAY_NAME: str
     PARENT_FRAME: str
@@ -28,35 +29,43 @@ class GraphMember(Node):
 
     # Constructors
     def __init__(self):
-        super().__init__("graph_member", automatically_declare_parameters_from_overrides=True)
+        super().__init__(
+            "graph_member", automatically_declare_parameters_from_overrides=True
+        )
         self.get_logger().info(f"Received node name: {self.get_name()}")
         self.get_logger().info(f"Ingesting Graph Member params...")
 
         # Ingest ROS parameters. Notify user when defaults are being used.
-        if self.has_parameter('frame_name'):
-            self.FRAME_NAME = self.get_parameter(
-                'frame_name').get_parameter_value().string_value
+        if self.has_parameter("frame_name"):
+            self.FRAME_NAME = (
+                self.get_parameter("frame_name").get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning("frame_name")
             self.FRAME_NAME = "base_link"
 
-        if self.has_parameter('display_name'):
-            self.DISPLAY_NAME = self.get_parameter(
-                'display_name').get_parameter_value().string_value
+        if self.has_parameter("display_name"):
+            self.DISPLAY_NAME = (
+                self.get_parameter("display_name").get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning("display_name")
             self.DISPLAY_NAME = "Default Vehicle Name"
 
-        if self.has_parameter('parent_frame'):
-            self.PARENT_FRAME = self.get_parameter(
-                'parent_frame').get_parameter_value().string_value
+        if self.has_parameter("parent_frame"):
+            self.PARENT_FRAME = (
+                self.get_parameter("parent_frame").get_parameter_value().string_value
+            )
         else:
-            self.get_logger().info(f"parent_frame param not set, using standard default: \"map\"")
+            self.get_logger().info(
+                f'parent_frame param not set, using standard default: "map"'
+            )
             self.PARENT_FRAME = "map"
 
-        if self.has_parameter('tab_char'):
-            self._tab_char = self.get_parameter(
-                'tab_char').get_parameter_value().string_value
+        if self.has_parameter("tab_char"):
+            self._tab_char = (
+                self.get_parameter("tab_char").get_parameter_value().string_value
+            )
         else:
             self._tab_char = "|   "
 
@@ -73,13 +82,11 @@ class GraphMember(Node):
             The name of the parameter to be used in the warning.
         """
         self.get_logger().warn(
-            f"Parameter {param_name} not set in config file. using default")
+            f"Parameter {param_name} not set in config file. using default"
+        )
 
     def __str__(self):
-        return f"{
-            self.DISPLAY_NAME}\nTransform: {
-            self.PARENT_FRAME} -> {
-            self.FRAME_NAME}\n"
+        return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
 
     @classmethod
     def main(cls, args=None):

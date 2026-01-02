@@ -14,11 +14,14 @@ class TestSensorFactory(unittest.TestCase):
         self.rf_dir = os.path.join(self.sensor_dir, "rangefinders")
 
         self.full_camera: Camera = sensor_factory(
-            os.path.join(self.cm_dir, "full_camera.yaml"))
+            os.path.join(self.cm_dir, "full_camera.yaml")
+        )
         self.full_gimbal: Gimbal = sensor_factory(
-            os.path.join(self.gb_dir, "full_gimbal.yaml"))
+            os.path.join(self.gb_dir, "full_gimbal.yaml")
+        )
         self.full_rangefinder: Rangefinder = sensor_factory(
-            os.path.join(self.rf_dir, "full_rangefinder.yaml"))
+            os.path.join(self.rf_dir, "full_rangefinder.yaml")
+        )
 
     def test_sensor_factory(self):
         """sensor factory correctly makes types from yamls"""
@@ -26,15 +29,13 @@ class TestSensorFactory(unittest.TestCase):
         self.assertRaises(
             ValueError,
             sensor_factory,
-            os.path.join(
-                self.sensor_dir,
-                "no_sensortype.yaml"))
+            os.path.join(self.sensor_dir, "no_sensortype.yaml"),
+        )
         self.assertRaises(
             ValueError,
             sensor_factory,
-            os.path.join(
-                self.sensor_dir,
-                "bad_sensortype.yaml"))
+            os.path.join(self.sensor_dir, "bad_sensortype.yaml"),
+        )
 
         self.assertIsInstance(self.full_camera, Camera)
         self.assertIsInstance(self.full_gimbal, Gimbal)

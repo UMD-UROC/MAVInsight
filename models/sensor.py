@@ -47,8 +47,7 @@ class Sensor(GraphMember):
         # notify user when defaults are being used
         if self.has_parameter("offset"):
             offset_param_val = (
-                self.get_parameter(
-                    "offset").get_parameter_value().double_array_value
+                self.get_parameter("offset").get_parameter_value().double_array_value
             )
             try:
                 self.OFFSET = [float(f) for f in offset_param_val]
@@ -73,8 +72,7 @@ class Sensor(GraphMember):
 
         if self.has_parameter("sensor_type"):
             self.SENSOR_TYPE = SensorTypes(
-                self.get_parameter(
-                    "sensor_type").get_parameter_value().string_value
+                self.get_parameter("sensor_type").get_parameter_value().string_value
             )
         else:
             self.default_parameter_warning("sensor_type")
@@ -82,8 +80,7 @@ class Sensor(GraphMember):
 
         if self.has_parameter("sensors"):
             self.SENSORS = list(
-                self.get_parameter(
-                    "sensors").get_parameter_value().string_array_value
+                self.get_parameter("sensors").get_parameter_value().string_array_value
             )
         else:
             self.SENSORS = []
@@ -92,29 +89,25 @@ class Sensor(GraphMember):
         if len(self.OFFSET) == 3:
             static_frame_name = f"{self.FRAME_NAME}_offset"
             self.get_logger().info(
-                f"Received valid [x,y,z] sensor offset: {
-                    self.OFFSET}m. Building new static frame: {static_frame_name}")
+                f"Received valid[x, y, z] sensor offset: {self.OFFSET}m. Building new static frame: {static_frame_name}"
+            )
             self.tf_static_broadcaster = StaticTransformBroadcaster(self)
 
             # header
             head_out = Header(
-                stamp=self.get_clock().now().to_msg(),
-                frame_id=self.PARENT_FRAME)
+                stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME
+            )
 
             # transform
             # assumed no static rotational offset, for now. TODO
-            pos_out = Vector3(
-                x=self.OFFSET[0],
-                y=self.OFFSET[1],
-                z=self.OFFSET[2])
+            pos_out = Vector3(x=self.OFFSET[0], y=self.OFFSET[1], z=self.OFFSET[2])
             tf_out = Transform(translation=pos_out)
             static_frame_name = f"{self.FRAME_NAME}_offset"
 
             # build tf
             s_t = TransformStamped(
-                header=head_out,
-                child_frame_id=static_frame_name,
-                transform=tf_out)
+                header=head_out, child_frame_id=static_frame_name, transform=tf_out
+            )
             self.tf_static_broadcaster.sendTransform(s_t)
 
             # allow sub-members to attach to this new offset frame
@@ -125,16 +118,9 @@ class Sensor(GraphMember):
         t2 = t1 + self._tab_char
         sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
         return (
-            f"{t1}{
-                self.DISPLAY_NAME} | Sensor {
-                self.SENSOR_TYPE.name}\n" +
-            f"{t2}Transform: {
-                self.PARENT_FRAME} -> {
-                    self.FRAME_NAME}\n" +
-            f"{t2}Static offset from parent: (x: {
-                self.OFFSET[0]}, y: {
-                self.OFFSET[1]}, z: {
-                self.OFFSET[2]})\n" +
+            f"{t1}{self.DISPLAY_NAME} | Sensor {self.SENSOR_TYPE.name}\n" +
+            f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n" +
+            f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n" +
             extra_fields +
             f"{t2}Sensors: {sensors_string}" +
             (
@@ -168,8 +154,7 @@ class Camera(Sensor):
         # notify user when defaults are being used
         if self.has_parameter("cam_info_topic"):
             self.CAM_INFO_TOPIC = (
-                self.get_parameter(
-                    "cam_info_topic").get_parameter_value().string_value
+                self.get_parameter("cam_info_topic").get_parameter_value().string_value
             )
         else:
             self.default_parameter_warning("cam_info_topic")
@@ -177,10 +162,7 @@ class Camera(Sensor):
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
-        camera_fields = (
-            f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n"
-            + extra_fields
-        )
+        camera_fields = f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
 
     def __str__(self):
@@ -271,8 +253,7 @@ class Rangefinder(Sensor):
         # notify user when defaults are being used.
         if self.has_parameter("range_topic"):
             self.RANGE_TOPIC = (
-                self.get_parameter(
-                    "range_topic").get_parameter_value().string_value
+                self.get_parameter("range_topic").get_parameter_value().string_value
             )
         else:
             self.default_parameter_warning("range_topic")
@@ -280,10 +261,7 @@ class Rangefinder(Sensor):
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
-        rangefinder_fields = (
-            f"{t}Range topic: {self.RANGE_TOPIC}\n"
-            + extra_fields
-        )
+        rangefinder_fields = f"{t}Range topic: {self.RANGE_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
 
     def __str__(self):
