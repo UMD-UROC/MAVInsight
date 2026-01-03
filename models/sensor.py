@@ -70,18 +70,13 @@ class Sensor(GraphMember):
             self.OFFSET = []
 
         if self.has_parameter("sensor_type"):
-            self.SENSOR_TYPE = SensorTypes(
-                self.get_parameter(
-                    "sensor_type").get_parameter_value().string_value
-            )
+            self.SENSOR_TYPE = SensorTypes(self.get_parameter("sensor_type").get_parameter_value().string_value)
         else:
             self.default_parameter_warning("sensor_type")
             self.SENSOR_TYPE = SensorTypes.DEFAULT
 
         if self.has_parameter("sensors"):
-            self.SENSORS = list(
-                self.get_parameter("sensors").get_parameter_value().string_array_value
-            )
+            self.SENSORS = list(self.get_parameter("sensors").get_parameter_value().string_array_value)
         else:
             self.SENSORS = []
 
@@ -153,10 +148,7 @@ class Camera(Sensor):
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
-        camera_fields = (
-            f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n"
-            + extra_fields
-        )
+        camera_fields = f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
 
     def __str__(self):
@@ -188,12 +180,7 @@ class Gimbal(Sensor):
             self.ORIENTATION_TOPIC = "gimbal_orientation"
 
         # initialize subscribers
-        self.create_subscription(
-            GimbalDeviceAttitudeStatus,
-            self.ORIENTATION_TOPIC,
-            self.publish_orientation,
-            viz_qos,
-        )
+        self.create_subscription(GimbalDeviceAttitudeStatus, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
 
     def publish_orientation(self, msg: GimbalDeviceAttitudeStatus):
         # header
@@ -243,10 +230,7 @@ class Rangefinder(Sensor):
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
-        rangefinder_fields = (
-            f"{t}Range topic: {self.RANGE_TOPIC}\n"
-            + extra_fields
-        )
+        rangefinder_fields = f"{t}Range topic: {self.RANGE_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
 
     def __str__(self):
