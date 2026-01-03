@@ -23,10 +23,13 @@ class GraphMember(Node):
         The desired "tab" string. Used during string formatting of GraphMember and its
         subclasses.
     """
-    FRAME_NAME:str
-    DISPLAY_NAME:str
-    PARENT_FRAME:str
-    _tab_char:str
+
+    FRAME_NAME: str
+    DISPLAY_NAME: str
+    PARENT_FRAME: str
+    POSE_FRAME: str #TODO: When getting this from px4_msgs, the frame is embedded in the message. get this dynamically from the message?
+                    #TODO: We may need to split this into a position frame and orientation frame (px4 odometry quaternion reported as body->world, but position reported as world->body)
+    _tab_char: str
 
     # Constructors
     def __init__(self):
@@ -50,8 +53,14 @@ class GraphMember(Node):
         if self.has_parameter('parent_frame'):
             self.PARENT_FRAME = self.get_parameter('parent_frame').get_parameter_value().string_value
         else:
-            self.get_logger().info(f"parent_frame param not set, using standard default: \"map\"")
+            self.get_logger().info(f'parent_frame param not set, using standard default: "map"')
             self.PARENT_FRAME = "map"
+
+        if self.has_parameter('pose_frame'):
+            self.POSE_FRAME = self.get_parameter('pose_frame').get_parameter_value().string_value
+        else:
+            self.get_logger().info(f"pose_frame param not set, using standard default: \"enu_flu\".")
+            self.POSE_FRAME = 'enu_flu'
 
         if self.has_parameter('tab_char'):
             self._tab_char = self.get_parameter('tab_char').get_parameter_value().string_value
@@ -63,6 +72,8 @@ class GraphMember(Node):
 
         # initialize static broadcaster
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
+
+        # Wait for foxglove to subscribe to our topics
         self.get_logger().info(f"Waiting for Foxglove...")
         i = 0
         while self.count_subscribers('/tf_static') == 0:
@@ -71,7 +82,7 @@ class GraphMember(Node):
             time.sleep(1.0)
         self.get_logger().info(f"Foxglove found.")
 
-    def default_parameter_warning(self, param_name:str):
+    def default_parameter_warning(self, param_name: str):
         """Helper method to output a boilerplate warning indicating that a default
         parameter is being used in the absence of a defined valid parameter.
 

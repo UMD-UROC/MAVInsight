@@ -4,6 +4,7 @@ The `mavinsight` package is a ROS2 Package configured to build a model of a Vehi
 ## Package Structure
 - `MAVInsight/` - This repo.
   - `mavinsight/` - Source directory for the Nodes of this repo.
+  // TODO UPDATE
     - `vehicle_tf_publisher.py` - The Node that will publish transforms between frames based on the the relationships between `Vehicles` and `Sensors`.
       - `Vehicle` definitions are written in `.yaml` files found in `vehicles/`
       - `Sensor` definitions are written in `.yaml` files found in `sensors/`

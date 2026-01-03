@@ -13,9 +13,9 @@ class TestGimbal(unittest.TestCase):
         self.gb_dir = os.path.join(self.sensor_dir, "gimbals")
         self.rf_dir = os.path.join(self.sensor_dir, "rangefinders")
 
-        self.full_camera:Camera = sensor_factory(os.path.join(self.cm_dir, "full_camera.yaml"))
-        self.full_gimbal:Gimbal = sensor_factory(os.path.join(self.gb_dir, "full_gimbal.yaml"))
-        self.full_rangefinder:Rangefinder = sensor_factory(os.path.join(self.rf_dir, "full_rangefinder.yaml"))
+        self.full_camera: Camera = sensor_factory(os.path.join(self.cm_dir, "full_camera.yaml"))
+        self.full_gimbal: Gimbal = sensor_factory(os.path.join(self.gb_dir, "full_gimbal.yaml"))
+        self.full_rangefinder: Rangefinder = sensor_factory(os.path.join(self.rf_dir, "full_rangefinder.yaml"))
 
     def test_sensor_factory(self):
         """sensor factory correctly makes gimbal"""

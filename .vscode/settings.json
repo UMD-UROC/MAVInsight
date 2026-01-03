@@ -1,0 +1,4 @@
+{
+    "editor.defaultFormatter": "ms-python.autopep8",
+    "autopep8.importStrategy": "fromEnvironment",
+}

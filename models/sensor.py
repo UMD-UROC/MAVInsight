@@ -1,30 +1,24 @@
 # python imports
 from __future__ import annotations
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 from typing import Optional
-import numpy as np
 
-# ROS2 imports
-from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
 
 # ROS2 message imports
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
-from mavros_msgs.msg import GimbalDeviceAttitudeStatus,GimbalManagerSetAttitude
+from mavros_msgs.msg import GimbalDeviceAttitudeStatus, GimbalManagerSetAttitude
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Header
+
+# ROS imports
 from std_msgs.msg import Header
 
 # MAVInsight imports
 from models.frame_utils import frd_2_flu
 from models.graph_member import GraphMember
+from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
-
-# TODO: kick this out to a utils file
-viz_qos = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.VOLATILE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=1
-)
 
 FLAGS_RETRACT = 1
 FLAGS_NEUTRAL = 2
@@ -51,6 +45,7 @@ class Sensor(GraphMember):
         A list of other Sensors that are attached to this Sensor. A common example is a
         Camera (Sensor) on a Gimbal (Sensor).
     """
+
     COORD_FRAME_TF: str | None
     OFFSET: list[float]
     SENSOR_TYPE: SensorTypes
@@ -67,20 +62,25 @@ class Sensor(GraphMember):
             self.COORD_FRAME_TF = self.get_parameter('coord_frame_tf').get_parameter_value().string_value
         else:
             self.COORD_FRAME_TF = "enu-flu"
-        if self.has_parameter('offset'):
-            offset_param_val = self.get_parameter('offset').get_parameter_value().double_array_value
+
+        if self.has_parameter("offset"):
+            offset_param_val = self.get_parameter("offset").get_parameter_value().double_array_value
             try:
                 self.OFFSET = [float(f) for f in offset_param_val]
             except ValueError as e:
                 self.OFFSET = []
-                self.get_logger().error(f"Unable to interpret offset param elements as floats. Using no-offset default.\n" +
-                                        f"Received: {offset_param_val}\n" +
-                                        f"Error: {e}")
+                self.get_logger().error(
+                    f"Unable to interpret offset param elements as floats. Using no-offset default.\n" +
+                    f"Received: {offset_param_val}\n" +
+                    f"Error: {e}"
+                )
 
             if len(self.OFFSET) != 3:
                 self.OFFSET = []
-                self.get_logger().error(f"Offset param must be exactly 3 elements long. Using, no-offset default.\n" +
-                                        f"Received: {offset_param_val}")
+                self.get_logger().error(
+                    f"Offset param must be exactly 3 elements long. Using no-offset default.\n" +
+                    f"Received: {offset_param_val}"
+                )
             else:
                 if sum(self.OFFSET) == 0.0:
                     self.OFFSET = []
@@ -88,7 +88,7 @@ class Sensor(GraphMember):
             self.default_parameter_warning("offset")
             self.OFFSET = []
 
-        if self.has_parameter('sensor_type'):
+        if self.has_parameter("sensor_type"):
             self.SENSOR_TYPE = SensorTypes(self.get_parameter("sensor_type").get_parameter_value().string_value)
         else:
             self.default_parameter_warning("sensor_type")
@@ -114,18 +114,14 @@ class Sensor(GraphMember):
             static_frame_name = f"{self.FRAME_NAME}_mount"
 
             # build tf
-            s_t = TransformStamped(
-                header = head_out,
-                child_frame_id = static_frame_name,
-                transform = tf_out
-            )
+            s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
             self.get_logger().debug(f"broadcasting {self.PARENT_FRAME} to {static_frame_name}:\n{s_t}")
             self.tf_static_broadcaster.sendTransform(s_t)
 
             # allow sub-members to attach to this new offset frame
             self.PARENT_FRAME = static_frame_name
 
-    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+    def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char
         sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
@@ -135,7 +131,7 @@ class Sensor(GraphMember):
             f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n" +
             extra_fields +
             f"{t2}Sensors: {sensors_string}" +
-            ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
+            "\n".join(t2 + self._tab_char + s for s in self.SENSORS)
         )
 
     def __str__(self):
@@ -150,6 +146,7 @@ class Camera(Sensor):
     cam_info_topic : str
         The str name of the topic carrying the camera info.
     """
+
     CAM_INFO_TOPIC: Optional[str]
 
     # constructors
@@ -159,13 +156,13 @@ class Camera(Sensor):
 
         # ingest ROS parameters
         # notify user when defaults are being used
-        if self.has_parameter('cam_info_topic'):
-            self.CAM_INFO_TOPIC = self.get_parameter('cam_info_topic').get_parameter_value().string_value
+        if self.has_parameter("cam_info_topic"):
+            self.CAM_INFO_TOPIC = self.get_parameter("cam_info_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("cam_info_topic")
             self.CAM_INFO_TOPIC = "camera_info"
 
-    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+    def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
         camera_fields = f"{t}Camera info topic: {self.CAM_INFO_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=camera_fields)
@@ -182,7 +179,8 @@ class Gimbal(Sensor):
     orientation_topic : str
         The str name of the topic carrying the gimbal orientation data.
     """
-    ORIENTATION_TOPIC:str
+
+    ORIENTATION_TOPIC: str
 
     retract_commanded: bool
     neutral_position_commanded: bool
@@ -193,7 +191,7 @@ class Gimbal(Sensor):
     # constructors
     def __init__(self):
         super().__init__()
-        self.get_logger().info("Ingesting Gimbal params...")
+        self.get_logger().info("Ingesting Camera params...")
 
         # initialize gimbal state variables
         self.retract_commanded = False
@@ -325,8 +323,7 @@ class Gimbal(Sensor):
         heading = np.arctan2(heading_vector_enu[1], heading_vector_enu[0])
         return R.from_euler('Z', heading)
 
-
-    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+    def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
         gimbal_fields = f"{t}Orientation topic: {self.ORIENTATION_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=gimbal_fields)
@@ -343,6 +340,7 @@ class Rangefinder(Sensor):
     range_topic : str
         The name of the topic carrying the range info.
     """
+
     RANGE_TOPIC: Optional[str]
 
     # constructors
@@ -352,13 +350,13 @@ class Rangefinder(Sensor):
 
         # ingest ROS parameters
         # notify user when defaults are being used.
-        if self.has_parameter('range_topic'):
-            self.RANGE_TOPIC = self.get_parameter('range_topic').get_parameter_value().string_value
+        if self.has_parameter("range_topic"):
+            self.RANGE_TOPIC = self.get_parameter("range_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("range_topic")
             self.RANGE_TOPIC = "rangefinder"
 
-    def _format(self, tab_depth:int=0, extra_fields:str="") -> str:
+    def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
         rangefinder_fields = f"{t}Range topic: {self.RANGE_TOPIC}\n" + extra_fields
         return super()._format(tab_depth=tab_depth, extra_fields=rangefinder_fields)
