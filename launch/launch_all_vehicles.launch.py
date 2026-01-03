@@ -87,23 +87,19 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
                 LOGGER.error(f"Cannot determine the type of file: {abs_path.as_posix()}\nSkipping ...")
                 continue
         except KeyError as e:
-            LOGGER.error(
-                f"Error parsing config file: {abs_path.as_posix()}, {e}\nSkipping..."
-            )
+            LOGGER.error(f"Error parsing config file: {abs_path.as_posix()}, {e}\nSkipping...")
             continue
         LOGGER.debug(f"File type identified")
 
         # create Node action for launch description
-        node_list.append(
-            Node(
-                package=package_name,
-                executable=ex,
-                name=abs_path.stem,
-                namespace=namespace,
-                parameters=[global_config.as_posix(), abs_path.as_posix()],
-                output="screen",
-            )
-        )
+        node_list.append(Node(
+            package=package_name,
+            executable=ex,
+            name=abs_path.stem,
+            namespace=namespace,
+            parameters=[global_config.as_posix(), abs_path.as_posix()],
+            output="screen",
+        ))
 
         # add sub-members to list of nodes to be built
         LOGGER.info(f"Adding new config files: {config.get('sensors', [])}")
