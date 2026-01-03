@@ -8,3 +8,4 @@
       parent_frame: map
       platform: quad
       pose_frame: frd_ned
+      position_tolerance: 0.0254 # (1 inch)
