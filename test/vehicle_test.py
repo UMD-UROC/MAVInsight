@@ -11,8 +11,8 @@ class TestVehicle(unittest.TestCase):
         self.vehicle_dir = os.path.join(self.share_dir, "vehicles")
         self.bad_v_dir = os.path.join(self.vehicle_dir, "bad_vehicles")
 
-        self.full_vehicle:Vehicle = vehicle_factory(os.path.join(self.vehicle_dir, "full_vehicle.yaml"))
-        self.minimum_vehicle:Vehicle = vehicle_factory(os.path.join(self.vehicle_dir, "minimum_vehicle.yaml"))
+        self.full_vehicle: Vehicle = vehicle_factory(os.path.join(self.vehicle_dir, "full_vehicle.yaml"))
+        self.minimum_vehicle: Vehicle = vehicle_factory(os.path.join(self.vehicle_dir, "minimum_vehicle.yaml"))
 
     def test_vehicle_factory(self):
         """vehicle factory correctly makes or doesnt make gimbal"""
@@ -58,7 +58,7 @@ class TestVehicle(unittest.TestCase):
         self.assertEqual(self.full_vehicle.platform, Platforms.QUAD_COPTER)
         self.assertEqual(len(self.full_vehicle.sensors), 2)
 
-        sub_cam:Camera = self.full_vehicle.sensors[0]
+        sub_cam: Camera = self.full_vehicle.sensors[0]
         self.assertEqual(sub_cam.name, "No Offset Camera")
         self.assertEqual(sub_cam.frame_name, "no_offset_cam")
         self.assertEqual(sub_cam.cam_info_topic, "/no/offset/cam")
@@ -69,7 +69,7 @@ class TestVehicle(unittest.TestCase):
         self.assertEqual(sub_cam.offset[1], 0.0)
         self.assertEqual(sub_cam.offset[2], 0.0)
 
-        sub_gimbal:Gimbal = self.full_vehicle.sensors[1]
+        sub_gimbal: Gimbal = self.full_vehicle.sensors[1]
         self.assertEqual(sub_gimbal.name, "Full Gimbal")
         self.assertEqual(sub_gimbal.frame_name, "full_gimbal")
         self.assertEqual(sub_gimbal.orientation_topic, "/test/gimbal")
@@ -80,7 +80,7 @@ class TestVehicle(unittest.TestCase):
         self.assertEqual(sub_gimbal.offset[1], 0.002)
         self.assertEqual(sub_gimbal.offset[2], 0.0003)
 
-        g_cam:Camera = self.full_vehicle.sensors[1].sensors[0]
+        g_cam: Camera = self.full_vehicle.sensors[1].sensors[0]
         self.assertEqual(g_cam.name, "Full test cam")
         self.assertEqual(g_cam.frame_name, "test_cam")
         self.assertEqual(len(g_cam.offset), 3)
@@ -91,7 +91,7 @@ class TestVehicle(unittest.TestCase):
         self.assertEqual(g_cam.parent_frame, "link")
         self.assertEqual(g_cam.sensor_type, SensorTypes.CAMERA)
 
-        g_rf:Rangefinder = self.full_vehicle.sensors[1].sensors[1]
+        g_rf: Rangefinder = self.full_vehicle.sensors[1].sensors[1]
         self.assertEqual(g_rf.name, "test full rangefinder")
         self.assertEqual(g_rf.frame_name, "test_rangefinder")
         self.assertEqual(len(g_rf.offset), 3)

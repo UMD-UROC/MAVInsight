@@ -1,4 +1,4 @@
-#python imports
+# python imports
 from pathlib import Path
 import yaml
 
@@ -10,10 +10,14 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger('vehicle_launch_logger')
-initial_paths_overrides = ['chimera_d_4.yaml']
+initial_paths_overrides = ['px4_sitl.yaml']
+
 
 def generate_launch_description():
     ld = LaunchDescription()
+
+    # Load global config
+    global_config = Path(get_package_share_directory(package_name)) / 'resource' / 'global_node_config.yaml'
 
     vehicle_dir = Path(get_package_share_directory(package_name)) / 'vehicles'
     if len(initial_paths_overrides) != 0:
@@ -22,13 +26,13 @@ def generate_launch_description():
         initial_paths = [p for p in vehicle_dir.iterdir()]
     LOGGER.info(f"Initial paths: {[p.name for p in initial_paths]}")
 
-    nodes = build_nodes(initial_paths)
+    nodes = build_nodes(initial_paths, global_config)
     for node in nodes:
         ld.add_action(node)
 
     return ld
 
-def build_nodes(paths : list[Path]) -> list[Node]:
+def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
     LOGGER.debug("Starting build")
     # initialize set of processed paths and output list
     processed = set()
@@ -55,7 +59,7 @@ def build_nodes(paths : list[Path]) -> list[Node]:
         except FileExistsError:
             LOGGER.error(f"Duplicate filenames in Vehicle + Sensor dirs for file: {config_path.as_posix()}.\nSkipping...")
             continue
-        if abs_path == None:
+        if abs_path is None:
             LOGGER.error(f"Cannot find file: {config_path.as_posix()} in any MAVInsight config folder.\nSkipping...")
             continue
         LOGGER.debug(f"abs path acquired")
@@ -93,7 +97,7 @@ def build_nodes(paths : list[Path]) -> list[Node]:
             executable=ex,
             name=abs_path.stem,
             namespace=namespace,
-            parameters=[abs_path.as_posix()],
+            parameters=[global_config.as_posix(), abs_path.as_posix()],
             output='screen'
         ))
 
@@ -104,7 +108,7 @@ def build_nodes(paths : list[Path]) -> list[Node]:
 
     return node_list
 
-def resolve_config_file(path:Path) -> Path | None:
+def resolve_config_file(path: Path) -> Path | None:
     if path.is_absolute():
         return path
 

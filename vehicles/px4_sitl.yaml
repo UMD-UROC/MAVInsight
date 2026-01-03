@@ -1,0 +1,10 @@
+/**/*:
+  px4_sitl:
+    ros__parameters:
+      display_name: PX4 SITL
+      frame_name: sitl_base_link
+      location_topic: "/fmu/out/vehicle_odometry"
+      message_schema: "px4_msgs"
+      parent_frame: map
+      platform: quad
+      pose_frame: frd_ned

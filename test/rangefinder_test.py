@@ -11,7 +11,7 @@ class TestRangefinder(unittest.TestCase):
 
         self.rf_dir = os.path.join(self.sensor_dir, "rangefinders")
 
-        self.full_rangefinder:Rangefinder = sensor_factory(os.path.join(self.rf_dir, "full_rangefinder.yaml"))
+        self.full_rangefinder: Rangefinder = sensor_factory(os.path.join(self.rf_dir, "full_rangefinder.yaml"))
 
     def test_sensor_factory(self):
         """sensor factory correctly makes rangefinder"""

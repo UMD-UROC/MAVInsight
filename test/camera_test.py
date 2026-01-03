@@ -11,7 +11,7 @@ class TestCamera(unittest.TestCase):
 
         self.cm_dir = os.path.join(self.sensor_dir, "cameras")
 
-        self.full_camera:Camera = sensor_factory(os.path.join(self.cm_dir, "full_camera.yaml"))
+        self.full_camera: Camera = sensor_factory(os.path.join(self.cm_dir, "full_camera.yaml"))
 
     def test_sensor_factory(self):
         """sensor factory correctly makes camera"""
