@@ -7,5 +7,4 @@
       message_schema: "px4_msgs"
       parent_frame: map
       platform: quad
-      sensors:
-        - two_axis_gimbal.yaml
+      pose_frame: frd_ned

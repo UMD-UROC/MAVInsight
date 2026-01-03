@@ -5,14 +5,7 @@ from __future__ import annotations
 import rclpy
 
 # ROS2 message imports
-from geometry_msgs.msg import (
-    Point,
-    PoseStamped,
-    Quaternion,
-    Transform,
-    TransformStamped,
-    Vector3,
-)
+from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry, Path
 
 # PX4 Msg
@@ -23,6 +16,7 @@ from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
 # MAVInsight imports
+from models.frame_utils import frd_ned_2_flu_enu
 from models.graph_member import GraphMember
 from models.platforms import Platforms
 from models.qos_profiles import viz_qos
@@ -57,53 +51,41 @@ class Vehicle(GraphMember):
 
         # Global Refresh Rate
         if self.has_parameter("refresh_rate"):
-            self.REFRESH_RATE = (
-                self.get_parameter("refresh_rate").get_parameter_value().double_value
-            )
+            self.REFRESH_RATE = self.get_parameter("refresh_rate").get_parameter_value().double_value
         else:
             self.default_parameter_warning("refresh_rate")
             self.REFRESH_RATE = 60.0  # Hz
 
         # Namespace
         if self.has_parameter("namespace"):
-            namespace = (
-                self.get_parameter("namespace").get_parameter_value().string_value
-            )
+            namespace = self.get_parameter("namespace").get_parameter_value().string_value
         else:
             self.default_parameter_warning("namespace")
             namespace = "/uas/"
 
         # Location Topic
         if self.has_parameter("location_topic"):
-            self.LOCATION_TOPIC = (
-                self.get_parameter("location_topic").get_parameter_value().string_value
-            )
+            self.LOCATION_TOPIC = self.get_parameter("location_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("location_topic")
             self.LOCATION_TOPIC = "gps"
 
         # Platform Type
         if self.has_parameter("platform"):
-            self.PLATFORM = Platforms(
-                self.get_parameter("platform").get_parameter_value().string_value
-            )
+            self.PLATFORM = Platforms(self.get_parameter("platform").get_parameter_value().string_value)
         else:
             self.default_parameter_warning("platform")
             self.PLATFORM = Platforms.DEFAULT
 
         # Sensors
         if self.has_parameter("sensors"):
-            self.SENSORS = list(
-                self.get_parameter("sensors").get_parameter_value().string_array_value
-            )
+            self.SENSORS = list(self.get_parameter("sensors").get_parameter_value().string_array_value)
         else:
             self.SENSORS = []
 
         # Message Schema
         if self.has_parameter("message_schema"):
-            msg_schema_str = (
-                self.get_parameter("message_schema").get_parameter_value().string_value
-            )
+            msg_schema_str = self.get_parameter("message_schema").get_parameter_value().string_value
             if msg_schema_str.lower() == "px4_msgs":
                 self.LOCATION_MSG_TYPE = VehicleOdometry
             else:
@@ -113,9 +95,7 @@ class Vehicle(GraphMember):
             self.LOCATION_MSG_TYPE = Odometry
 
         # Initialize subscribers
-        self.create_subscription(
-            self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos
-        )
+        self.create_subscription(self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos)
 
         # Initialize publishers
         self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", 1)
@@ -143,9 +123,7 @@ class Vehicle(GraphMember):
     def publish_position(self, msg: Odometry | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas
-        head_out = Header(
-            stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME
-        )
+        head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -157,22 +135,17 @@ class Vehicle(GraphMember):
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
             assert isinstance(msg, VehicleOdometry)
             pos_in = msg.position
-            # TODO: transform from NED to ENU
-            pos_out = Vector3(
-                x=float(pos_in[0]), y=float(pos_in[1]), z=float(pos_in[2])
-            )
-            q_out = Quaternion(
-                x=float(msg.q[1]),
-                y=float(msg.q[2]),
-                z=float(msg.q[3]),
-                w=float(msg.q[0]),
-            )
-            tf_out = Transform(translation=pos_out, rotation=q_out)
 
-            path_update.pose.position.x = float(pos_in[0])
-            path_update.pose.position.y = float(pos_in[1])
-            path_update.pose.position.z = float(pos_in[2])
-            path_update.pose.orientation = q_out
+            pos_out = self.position_conversion(x_in=float(pos_in[0]), y_in=float(pos_in[1]), z_in=float(pos_in[2]))
+            q_out_frd = Quaternion(x=float(msg.q[1]), y=float(msg.q[2]), z=float(msg.q[3]), w=float(msg.q[0]))
+
+            q_out_flu = frd_ned_2_flu_enu(q_out_frd)
+            tf_out = Transform(translation=pos_out, rotation=q_out_flu)
+
+            path_update.pose.position.x = pos_out.x
+            path_update.pose.position.y = pos_out.y
+            path_update.pose.position.z = pos_out.z
+            path_update.pose.orientation = q_out_flu
 
             # TODO: Migrate to new function
             self.drone_velocity = [float(v) for v in msg.velocity]
@@ -205,7 +178,7 @@ class Vehicle(GraphMember):
 
         # build PoseStamped for path
         # Path update
-        self.path.poses.append(path_update)
+        self.path.poses.append(path_update) # type: ignore
         self.path.header.stamp = path_update.header.stamp
 
     def publish_path(self):
@@ -248,6 +221,14 @@ class Vehicle(GraphMember):
         velocity_vector_marker.color.a = 1.0
 
         self.velocity_vector_marker_pub.publish(velocity_vector_marker)
+
+    def position_conversion(self, x_in:float, y_in:float, z_in:float) -> Vector3:
+        if 'ned' in self.POSE_FRAME:
+            return Vector3(x=y_in, y=x_in, z=-z_in)
+        elif 'enu' in self.POSE_FRAME:
+            return Vector3(x=x_in, y=y_in, z=z_in)
+        else:
+            raise ValueError(f"Unable to determine the coordinate frame for message type: {self.POSE_FRAME}")
 
     def _format(self, tab_depth: int = 0) -> str:
         t1 = self._tab_char * tab_depth
