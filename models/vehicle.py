@@ -148,9 +148,11 @@ class Vehicle(GraphMember):
             path_update.pose.orientation = q_out_flu
 
             # TODO: Migrate to new function
-            self.drone_velocity = [float(v) for v in msg.velocity]
+            vel_in = msg.velocity
+            vel_out = self.position_conversion(x_in=float(vel_in[0]), y_in=float(vel_in[1]), z_in=float(vel_in[2]))
+            self.drone_velocity = [vel_out.x, vel_out.y, vel_out.z]
 
-            self.drone_pos = [float(pos_in[0]), float(pos_in[1]), float(pos_in[2])]
+            self.drone_pos = [pos_out.x, pos_out.y, pos_out.z]
 
         else:
             assert isinstance(msg, Odometry)
