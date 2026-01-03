@@ -58,7 +58,7 @@ class Sensor(GraphMember):
             if len(self.OFFSET) != 3:
                 self.OFFSET = []
                 self.get_logger().error(
-                    f"Offset param must be exactly 3 elements long. Using, no-offset default.\n" +
+                    f"Offset param must be exactly 3 elements long. Using no-offset default.\n" +
                     f"Received: {offset_param_val}")
             else:
                 if sum(self.OFFSET) == 0.0:
@@ -110,11 +110,7 @@ class Sensor(GraphMember):
             f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n" +
             extra_fields +
             f"{t2}Sensors: {sensors_string}" +
-            (
-                "\n".join(
-                    t2 +
-                    self._tab_char +
-                    s for s in self.SENSORS)))
+            "\n".join(t2 + self._tab_char + s for s in self.SENSORS))
 
     def __str__(self):
         return self._format()

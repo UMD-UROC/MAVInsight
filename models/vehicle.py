@@ -1,17 +1,10 @@
 # python imports
 from __future__ import annotations
 
-# ROS2 imports
-import rclpy
-
 # ROS2 message imports
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry, Path
-
-# PX4 Msg
-from px4_msgs.msg import VehicleLocalPosition, VehicleOdometry  # type:ignore
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from scipy.spatial.transform import Rotation
+from px4_msgs.msg import VehicleOdometry  # type:ignore
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
