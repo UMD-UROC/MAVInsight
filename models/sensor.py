@@ -51,16 +51,16 @@ class Sensor(GraphMember):
             except ValueError as e:
                 self.OFFSET = []
                 self.get_logger().error(
-                    f"Unable to interpret offset param elements as floats. Using no-offset default.\n"
-                    + f"Received: {offset_param_val}\n"
-                    + f"Error: {e}"
+                    f"Unable to interpret offset param elements as floats. Using no-offset default.\n" +
+                    f"Received: {offset_param_val}\n" +
+                    f"Error: {e}"
                 )
 
             if len(self.OFFSET) != 3:
                 self.OFFSET = []
                 self.get_logger().error(
-                    f"Offset param must be exactly 3 elements long. Using, no-offset default.\n"
-                    + f"Received: {offset_param_val}"
+                    f"Offset param must be exactly 3 elements long. Using no-offset default.\n" +
+                    f"Received: {offset_param_val}"
                 )
             else:
                 if sum(self.OFFSET) == 0.0:
@@ -91,10 +91,7 @@ class Sensor(GraphMember):
 
             # transform
             # assumed no static rotational offset, for now. TODO
-            pos_out = Vector3(
-                x=self.OFFSET[0],
-                y=self.OFFSET[1],
-                z=self.OFFSET[2])
+            pos_out = Vector3(x=self.OFFSET[0], y=self.OFFSET[1], z=self.OFFSET[2])
             tf_out = Transform(translation=pos_out)
             static_frame_name = f"{self.FRAME_NAME}_offset"
 
@@ -110,12 +107,12 @@ class Sensor(GraphMember):
         t2 = t1 + self._tab_char
         sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
         return (
-            f"{t1}{self.DISPLAY_NAME} | Sensor {self.SENSOR_TYPE.name}\n"
-            + f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
-            + f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n"
-            + extra_fields
-            + f"{t2}Sensors: {sensors_string}"
-            + ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
+            f"{t1}{self.DISPLAY_NAME} | Sensor {self.SENSOR_TYPE.name}\n" +
+            f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n" +
+            f"{t2}Static offset from parent: (x: {self.OFFSET[0]}, y: {self.OFFSET[1]}, z: {self.OFFSET[2]})\n" +
+            extra_fields +
+            f"{t2}Sensors: {sensors_string}" +
+            "\n".join(t2 + self._tab_char + s for s in self.SENSORS)
         )
 
     def __str__(self):

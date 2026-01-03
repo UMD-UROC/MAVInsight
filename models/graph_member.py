@@ -20,6 +20,7 @@ class GraphMember(Node):
         The desired "tab" string. Used during string formatting of GraphMember and its
         subclasses.
     """
+
     FRAME_NAME: str
     DISPLAY_NAME: str
     PARENT_FRAME: str
@@ -49,7 +50,7 @@ class GraphMember(Node):
         if self.has_parameter('parent_frame'):
             self.PARENT_FRAME = self.get_parameter('parent_frame').get_parameter_value().string_value
         else:
-            self.get_logger().info(f"parent_frame param not set, using standard default: \"map\"")
+            self.get_logger().info(f'parent_frame param not set, using standard default: "map"')
             self.PARENT_FRAME = "map"
 
         if self.has_parameter('pose_frame'):
