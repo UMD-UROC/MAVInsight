@@ -7,6 +7,9 @@
         - 0.5
         - 0.0
         - -0.25
+      coord_frame: ned-frd
       orientation_topic: /uas4/gimbal_control/device/attitude_status
+      command_topic: /uas4/gimbal_control/manager/set_attitude
+      body_orientation_topic: /uas4/global_position/local
       parent_frame: d4_base_link
       sensor_type: gimbal
