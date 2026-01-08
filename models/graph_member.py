@@ -77,9 +77,9 @@ class GraphMember(Node):
         self.get_logger().info(f"Waiting for Foxglove...")
         i = 0
         while self.count_subscribers('/tf_static') == 0:
-            self.get_logger().info(f"...{i}")
+            self.get_logger().info(f"...{i*5}sec")
             i+=1
-            time.sleep(1.0)
+            time.sleep(5.0)
         self.get_logger().info(f"Foxglove found.")
 
     def default_parameter_warning(self, param_name: str):

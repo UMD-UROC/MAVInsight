@@ -10,6 +10,7 @@ import mavros_msgs.msg
 import px4_msgs.msg
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Range
 from std_msgs.msg import Header
 
 # ROS imports
@@ -379,6 +380,20 @@ class Rangefinder(Sensor):
         else:
             self.default_parameter_warning("range_topic")
             self.RANGE_TOPIC = "rangefinder"
+
+        # initialize subscribers
+        self.create_subscription(Range, self.RANGE_TOPIC, self.publish_rangefinder, viz_qos)
+
+    def publish_rangefinder(self, msg: Range):
+        d = float(msg.range)
+
+        tf = TransformStamped(
+            header = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME),
+            child_frame_id = f"{self.FRAME_NAME}",
+            transform = Transform(translation=Vector3(x=d))
+        )
+
+        self.tf_broadcaster.sendTransform(tf)
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)

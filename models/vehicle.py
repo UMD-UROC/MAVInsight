@@ -5,6 +5,7 @@ from __future__ import annotations
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry, Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
+from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
@@ -13,7 +14,6 @@ from models.frame_utils import frd_ned_2_flu_enu
 from models.graph_member import GraphMember
 from models.platforms import Platforms
 from models.qos_profiles import viz_qos
-
 
 class Vehicle(GraphMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -112,6 +112,15 @@ class Vehicle(GraphMember):
         # Publisher timers
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
+
+        # TODO: Decide where the map reference should live.
+        # this is a hardcoded reference point for foxglove's map feature in the 3D panel
+        self.create_publisher(NavSatFix, "/map_ref", 1).publish(NavSatFix(
+            header=Header(frame_id='map'),
+            latitude=32.5006765,
+            longitude=-83.7512641,
+            altitude=100.75844396218884
+        ))
 
     def publish_position(self, msg: Odometry | VehicleOdometry):
         # header

@@ -13,3 +13,5 @@
       body_orientation_topic: /uas4/global_position/local
       parent_frame: d4_base_link
       sensor_type: gimbal
+      sensors:
+        - rangefinder.yaml
