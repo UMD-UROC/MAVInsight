@@ -4,9 +4,9 @@
       display_name: Rangefinder (Gimbal)
       frame_name: rangefinder_frame
       offset:
+        - 0.5
+        - -0.25
         - 0.0
-        - 0.0
-        - 0.0
-      range_topic: /uas4/rangefinder
+      range_topic: /uas4/gimbal_lidar_50m
       parent_frame: d4_gimbal_frame
       sensor_type: rangefinder

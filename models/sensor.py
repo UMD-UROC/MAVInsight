@@ -6,16 +6,18 @@ from typing import Optional
 
 
 # ROS2 message imports
+import mavros_msgs.msg
+import px4_msgs.msg
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
-from mavros_msgs.msg import GimbalDeviceAttitudeStatus, GimbalManagerSetAttitude
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Range
 from std_msgs.msg import Header
 
 # ROS imports
 from std_msgs.msg import Header
 
 # MAVInsight imports
-from models.frame_utils import frd_2_flu
+from models.frame_utils import frd_2_flu, frd_ned_2_flu_enu
 from models.graph_member import GraphMember
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
@@ -33,9 +35,6 @@ class Sensor(GraphMember):
 
     Parameters
     ----------
-    coord_frame_tf : str
-        A string specifying a frame conversion to apply from the parent to the child
-        frame.
     offset : list[float]
         An [x, y, z] list of values that represents the static offset between the parent
         frame and this frame in meters.
@@ -46,7 +45,6 @@ class Sensor(GraphMember):
         Camera (Sensor) on a Gimbal (Sensor).
     """
 
-    COORD_FRAME_TF: str | None
     OFFSET: list[float]
     SENSOR_TYPE: SensorTypes
     SENSORS: list[str]
@@ -58,10 +56,6 @@ class Sensor(GraphMember):
 
         # ingest ROS parameters
         # notify user when defaults are being used
-        if self.has_parameter('coord_frame_tf'):
-            self.COORD_FRAME_TF = self.get_parameter('coord_frame_tf').get_parameter_value().string_value
-        else:
-            self.COORD_FRAME_TF = "enu-flu"
 
         if self.has_parameter("offset"):
             offset_param_val = self.get_parameter("offset").get_parameter_value().double_array_value
@@ -182,6 +176,8 @@ class Gimbal(Sensor):
 
     ORIENTATION_TOPIC: str
 
+    body_orientation: Quaternion
+
     retract_commanded: bool
     neutral_position_commanded: bool
     roll_lock_commanded: bool
@@ -205,6 +201,11 @@ class Gimbal(Sensor):
 
         # ingest ROS parameters
         # notify user when defaults are being used
+        if self.has_parameter("msg_schema"):
+            self.msg_schema = self.get_parameter("msg_schema").get_parameter_value().string_value.lower()
+        else:
+            self.default_parameter_warning("msg_schema")
+            self.msg_schema = "mavros"
         if self.has_parameter("orientation_topic"):
             self.ORIENTATION_TOPIC = self.get_parameter("orientation_topic").get_parameter_value().string_value
         else:
@@ -216,17 +217,38 @@ class Gimbal(Sensor):
             self.default_parameter_warning("command_topic")
             self.COMMAND_TOPIC = "command_topic"
 
-        # body orientation topic (not needed for mavlink-enabled gimbals)
+        # body orientation topic TODO: Rename. Gimbal may not always be mounted to body...
         if self.has_parameter("body_orientation_topic"):
             self.BODY_TOPIC = self.get_parameter("body_orientation_topic").get_parameter_value().string_value
-            self.create_subscription(Odometry, self.BODY_TOPIC, self.update_body, viz_qos)
+        else:
+            self.default_parameter_warning("body_orientation_topic")
+            self.BODY_TOPIC = "body_topic"
 
         # initialize subscribers
-        self.create_subscription(GimbalDeviceAttitudeStatus, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
-        self.create_subscription(GimbalManagerSetAttitude, self.COMMAND_TOPIC, self.update_commanded_state, viz_qos)
+        match self.msg_schema:
+            case "px4_msgs":
+                attitude_msg_type = px4_msgs.msg.GimbalDeviceAttitudeStatus
+                body_msg_type = px4_msgs.msg.VehicleOdometry
+            case "mavros":
+                attitude_msg_type = mavros_msgs.msg.GimbalDeviceAttitudeStatus
+                body_msg_type = Odometry
+                # only initialize subscriber for attitude command messages for mavros. no px4 message currently supported
+                self.create_subscription(mavros_msgs.msg.GimbalManagerSetAttitude, self.COMMAND_TOPIC, self.update_commanded_state, viz_qos)
+            case _:
+                raise ValueError(f"Cannot initialize {self.DISPLAY_NAME} Gimbal viz with message schema: {self.msg_schema}.")
+        self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
+        self.create_subscription(body_msg_type, self.BODY_TOPIC, self.update_body, viz_qos)
 
-    def update_body(self, msg : Odometry):
-        self.body_orientation = msg.pose.pose.orientation
+    def update_body(self, msg : Odometry | px4_msgs.msg.VehicleOdometry):
+        match self.msg_schema:
+            case "px4_msgs":
+                assert isinstance(msg, px4_msgs.msg.VehicleOdometry)
+                self.body_orientation = frd_ned_2_flu_enu(Quaternion(x=msg.q[1], y=msg.q[2], z=msg.q[3], w=msg.q[0])) #type: ignore
+            case "mavros":
+                assert isinstance(msg, Odometry)
+                self.body_orientation = msg.pose.pose.orientation
+            case _:
+                raise ValueError(f"Unable to assess body orientation for {self.DISPLAY_NAME} with schema {self.msg_schema}.")
 
         # re-compute the gimbal's ref frame TODO: Figure out where the following functionality should live.
         R_body_ref = R.identity()
@@ -236,8 +258,8 @@ class Gimbal(Sensor):
             R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
             R_body_ref *= R_world_body.inv()
 
-        if not self.yaw_lock_commanded:
-            R_body_ref *= self.heading_only_frame()
+            if not self.yaw_lock_commanded:
+                R_body_ref *= self.heading_only_frame()
 
         (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
         q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)
@@ -275,8 +297,8 @@ class Gimbal(Sensor):
         # else:
         #     self.get_logger().warn(f"Unrecognized coordinate frame: {self.COORD_FRAME_TF}. Skipping Native Frame creation.")
 
-    def publish_orientation(self, msg : GimbalDeviceAttitudeStatus):
-        # NOTE: GimbalDeviceAttitudeStatus message does NOT reflect commanded flags, only available flags.
+    def publish_orientation(self, msg : mavros_msgs.msg.GimbalDeviceAttitudeStatus):
+        # NOTE: in mavros, GimbalDeviceAttitudeStatus message does NOT reflect commanded flags, only available flags.
         # enu -> d4_base_link -> gimbal_mount -> gimbal_ref_frame -> gimbal_frame
 
         # construct gimbal attitude frame
@@ -293,7 +315,7 @@ class Gimbal(Sensor):
         )
         self.tf_broadcaster.sendTransform(gimbal_tf)
 
-    def update_commanded_state(self, msg: GimbalManagerSetAttitude):
+    def update_commanded_state(self, msg: mavros_msgs.msg.GimbalManagerSetAttitude):
         # TODO: Change this to a marker. I don't think we need a whole frame for the commanded attitude.
         # Ingest flags
         flags = int(msg.flags)
@@ -314,8 +336,11 @@ class Gimbal(Sensor):
 
     def heading_only_frame(self) -> R:
         R_world_body = R.from_quat([self.body_orientation.x, self.body_orientation.y, self.body_orientation.z, self.body_orientation.w])
+        # find the +x axis of the body (apply the +x vector to the R_world_body frame)
         heading_vector_enu = R_world_body.apply([1.0, 0.0, 0.0])
+        # get only the component of this vector in the XY world plane (remove the Z-component of a vector in ENU space)
         heading_vector_enu[2] = 0.0
+        # check if the vehicle is pointing straight up or down (would have no measurable "heading")
         norm = np.linalg.norm(heading_vector_enu)
         if norm < 1e-9:
             return R.identity()
@@ -355,6 +380,20 @@ class Rangefinder(Sensor):
         else:
             self.default_parameter_warning("range_topic")
             self.RANGE_TOPIC = "rangefinder"
+
+        # initialize subscribers
+        self.create_subscription(Range, self.RANGE_TOPIC, self.publish_rangefinder, viz_qos)
+
+    def publish_rangefinder(self, msg: Range):
+        d = float(msg.range)
+
+        tf = TransformStamped(
+            header = Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME),
+            child_frame_id = f"{self.FRAME_NAME}",
+            transform = Transform(translation=Vector3(x=d))
+        )
+
+        self.tf_broadcaster.sendTransform(tf)
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
