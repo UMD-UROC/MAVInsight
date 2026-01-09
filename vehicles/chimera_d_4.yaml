@@ -1,7 +1,7 @@
 /**/*:
   chimera_d_4:
     ros__parameters:
-      coord_frame: enu-flu
+      coord_frame: enu_flu
       display_name: Chimera D4
       executable: vehicle
       frame_name: d4_base_link

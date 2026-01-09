@@ -16,10 +16,13 @@ class Site(GraphMember):
 
     GEOFENCE_TOPIC: str
     GT_TOPIC: str
+    MAP_FRAME: str
     MAP_REF_TOPIC: str
+    NAME: str
 
     def __init__(self):
         super().__init__()
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Site params...")
 
         # geofence
         if self.has_parameter("geofence_topic"):
@@ -41,6 +44,12 @@ class Site(GraphMember):
         if self.has_parameter("ground_truths"):
             ground_truths = self.get_parameter("ground_truths").get_parameter_value().double_array_value
 
+        # map frame
+        if self.has_parameter("map_frame"):
+            self.MAP_FRAME = self.get_parameter("map_frame").get_parameter_value().string_value
+        else:
+            self.MAP_FRAME = "map"
+
         # map reference
         if self.has_parameter("map_ref_topic"):
             self.MAP_REF_TOPIC = self.get_parameter("map_ref_topic").get_parameter_value().string_value
@@ -51,13 +60,19 @@ class Site(GraphMember):
         if self.has_parameter("map_ref"):
             map_ref = self.get_parameter("map_ref").get_parameter_value().double_array_value
 
+        if self.has_parameter("name"):
+            self.NAME = self.get_parameter("name").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("name")
+            self.NAME = "site"
+
+        self.map_ref_pub = self.create_publisher(NavSatFix, f"/{self.NAME}{self.MAP_REF_TOPIC}", 1)
         self.map_lla_ref = NavSatFix(
-            header=Header(frame_id=self.PARENT_FRAME),
+            header=Header(frame_id=self.MAP_FRAME),
             latitude=map_ref[0],
             longitude=map_ref[1],
             altitude=map_ref[2]
         )
-        self.map_ref_pub = self.create_publisher(NavSatFix, f"/{self.FRAME_NAME}{self.MAP_REF_TOPIC}", 1)
 
         if geofence:
             if len(geofence) % 2 != 0:
@@ -65,7 +80,7 @@ class Site(GraphMember):
                     f"Non-even geofence list length. Ensure all lats and lons are paired.\n" +
                     f"length: {len(geofence)}"
                 )
-            self.geofence_pub = self.create_publisher(Marker, f"/{self.FRAME_NAME}{self.GEOFENCE_TOPIC}", viz_qos)
+            self.geofence_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GEOFENCE_TOPIC}", viz_qos)
 
             vertices = list(zip(geofence[0::2], geofence[1::2]))
             # close the loop
@@ -78,15 +93,17 @@ class Site(GraphMember):
             gt_coords = list(zip(ground_truths[0::2], ground_truths[1::2]))
             gt_fixes = [lla_2_enu(self.map_lla_ref, NavSatFix(latitude=lat, longitude=lon)) for lat, lon in gt_coords]
             self.gt_msg_points = [Point(x=e, y=n, z=u) for e, n, u in gt_fixes]
-            self.gt_pub = self.create_publisher(Marker, f"/{self.FRAME_NAME}{self.GT_TOPIC}", viz_qos)
+            self.gt_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GT_TOPIC}", viz_qos)
 
         self.timer = self.create_timer(3, self.site_foxglove_loiter)
+
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Site Initialized...")
 
     def site_foxglove_loiter(self):
         # TODO make this a one-time publish... maybe
         if self.geofence_points:
             self.geofence_pub.publish(Marker(
-                header=Header(frame_id=self.PARENT_FRAME),
+                header=Header(frame_id=self.MAP_FRAME),
                 type=Marker.LINE_STRIP,
                 action=Marker.ADD,
                 points=self.geofence_points,
@@ -95,7 +112,7 @@ class Site(GraphMember):
             ))
         if self.gt_msg_points:
             self.gt_pub.publish(Marker(
-                header=Header(frame_id=self.PARENT_FRAME),
+                header=Header(frame_id=self.MAP_FRAME),
                 type=Marker.POINTS,
                 action=Marker.ADD,
                 points=self.gt_msg_points,

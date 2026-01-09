@@ -18,7 +18,7 @@ from std_msgs.msg import Header
 
 # MAVInsight imports
 from models.frame_utils import frd_2_flu, frd_ned_2_flu_enu
-from models.graph_member import GraphMember
+from models.frame_member import FrameMember
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
@@ -28,7 +28,7 @@ FLAGS_ROLL_LOCK = 4
 FLAGS_PITCH_LOCK = 8
 FLAGS_YAW_LOCK = 16
 
-class Sensor(GraphMember):
+class Sensor(FrameMember):
     """Class/Node that defines a sensor and its relation to its parent frame. This class
     defines how and what information will be published to Foxglove for every Sensor (i.e.
     TF Frame for position w.r.t. the Vehicle, `Marker`s representing sensor readings, etc)
@@ -52,7 +52,7 @@ class Sensor(GraphMember):
     # constructors
     def __init__(self):
         super().__init__()
-        self.get_logger().info("Ingesting Sensor params...")
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Sensor params...")
 
         # ingest ROS parameters
         # notify user when defaults are being used
@@ -115,6 +115,8 @@ class Sensor(GraphMember):
             # allow sub-members to attach to this new offset frame
             self.PARENT_FRAME = static_frame_name
 
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Sensor initialized!")
+
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char
@@ -146,7 +148,7 @@ class Camera(Sensor):
     # constructors
     def __init__(self):
         super().__init__()
-        self.get_logger().info("Ingesting Camera params...")
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Camera params...")
 
         # ingest ROS parameters
         # notify user when defaults are being used
@@ -155,6 +157,8 @@ class Camera(Sensor):
         else:
             self.default_parameter_warning("cam_info_topic")
             self.CAM_INFO_TOPIC = "camera_info"
+
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Camera initialized!")
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
@@ -187,7 +191,7 @@ class Gimbal(Sensor):
     # constructors
     def __init__(self):
         super().__init__()
-        self.get_logger().info("Ingesting Camera params...")
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Camera params...")
 
         # initialize gimbal state variables
         self.retract_commanded = False
@@ -238,6 +242,8 @@ class Gimbal(Sensor):
                 raise ValueError(f"Cannot initialize {self.DISPLAY_NAME} Gimbal viz with message schema: {self.msg_schema}.")
         self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
         self.create_subscription(body_msg_type, self.BODY_TOPIC, self.update_body, viz_qos)
+
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Gimbal initialized!")
 
     def update_body(self, msg : Odometry | px4_msgs.msg.VehicleOdometry):
         match self.msg_schema:
@@ -371,7 +377,7 @@ class Rangefinder(Sensor):
     # constructors
     def __init__(self):
         super().__init__()
-        self.get_logger().info("Ingesting Rangefinder params...")
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Rangefinder params...")
 
         # ingest ROS parameters
         # notify user when defaults are being used.
@@ -383,6 +389,8 @@ class Rangefinder(Sensor):
 
         # initialize subscribers
         self.create_subscription(Range, self.RANGE_TOPIC, self.publish_rangefinder, viz_qos)
+
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Rangefinder initialized!")
 
     def publish_rangefinder(self, msg: Range):
         d = float(msg.range)

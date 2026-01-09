@@ -33,6 +33,7 @@ setup(
     entry_points={
         "console_scripts": [
             "graph_member = models.graph_member:GraphMember.main",
+            "frame_member = models.frame_member:FrameMember.main",
             "vehicle = models.vehicle:Vehicle.main",
             "sensor = models.sensor:Sensor.main",
             "camera = models.sensor:Camera.main",

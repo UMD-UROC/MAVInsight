@@ -1,11 +1,9 @@
 /**/*:
-  uroc:
+  c2_c130_crash:
     ros__parameters:
-      frame_name: c130_crash
+      name: c130_crash
       display_name: Challenge Event 2 Course 1 | C130 Crash
       executable: site
-      parent_frame: map
-      pose_frame: enu_flu
       geofence_topic: /geofence
       ground_truth_topic: /ground_truths
       map_ref_topic: /map_ref
