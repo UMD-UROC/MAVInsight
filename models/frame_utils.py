@@ -1,9 +1,11 @@
 # python imports
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import pymap3d as pm
 
 # ROS2 message imports
 from geometry_msgs.msg import Quaternion
+from sensor_msgs.msg import NavSatFix
 
 # define the NED -> ENU world frame conversion as a remapping of axes
 R_ned_enu = R.from_matrix(np.array([
@@ -40,3 +42,16 @@ def frd_ned_2_flu_enu(input):
         return R_frd_flu * input * R_enu_ned
     else:
         raise ValueError(f"Unrecognized input type in frd_ned_2_enu_flu conversion: {input}")
+
+def lla_2_enu(reference: NavSatFix, destination: NavSatFix, ignore_alt: bool=True):
+    dest_alt = reference.altitude if ignore_alt else destination.altitude
+
+    return pm.geodetic2enu(
+        destination.latitude,
+        destination.longitude,
+        dest_alt,
+        reference.latitude,
+        reference.longitude,
+        reference.altitude,
+        deg=True
+    )

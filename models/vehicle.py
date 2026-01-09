@@ -113,15 +113,6 @@ class Vehicle(GraphMember):
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
-        # TODO: Decide where the map reference should live.
-        # this is a hardcoded reference point for foxglove's map feature in the 3D panel
-        self.create_publisher(NavSatFix, "/map_ref", 1).publish(NavSatFix(
-            header=Header(frame_id='map'),
-            latitude=32.5006765,
-            longitude=-83.7512641,
-            altitude=100.75844396218884
-        ))
-
     def publish_position(self, msg: Odometry | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas

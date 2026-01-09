@@ -3,6 +3,7 @@
     ros__parameters:
       coord_frame: enu-flu
       display_name: Chimera D4
+      executable: vehicle
       frame_name: d4_base_link
       namespace: "/uas4/"
       location_topic: "/uas4/global_position/local"

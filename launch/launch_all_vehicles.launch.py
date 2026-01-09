@@ -10,20 +10,19 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger("vehicle_launch_logger")
-initial_paths_overrides = ["px4_sitl.yaml"]
-
+initial_paths_overrides = ["chimera_d_4.yaml", "uroc.yaml"]
 
 def generate_launch_description():
     ld = LaunchDescription()
 
-    # Load global config
-    global_config = Path(get_package_share_directory(package_name)) / 'resource' / 'global_node_config.yaml'
+    share_dir = Path(get_package_share_directory(package_name))
+    shared_resources = share_dir / "package_resources"
 
-    vehicle_dir = Path(get_package_share_directory(package_name)) / "vehicles"
-    if len(initial_paths_overrides) != 0:
-        initial_paths = [(vehicle_dir) / p for p in initial_paths_overrides]
-    else:
-        initial_paths = [p for p in vehicle_dir.iterdir()]
+    global_config = shared_resources / 'global_node_config.yaml'
+
+    # TODO change behavior for empty initial paths override
+    initial_paths = [(shared_resources) / p for p in initial_paths_overrides]
+
     LOGGER.info(f"Initial paths: {[p.name for p in initial_paths]}")
 
     nodes = build_nodes(initial_paths, global_config)
@@ -79,15 +78,9 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
 
         # select the correct executable for this config file
         try:
-            if "platform" in config.keys():
-                ex = "vehicle"
-            elif "sensor_type" in config.keys():
-                ex = config["sensor_type"]
-            else:
-                LOGGER.error(f"Cannot determine the type of file: {abs_path.as_posix()}\nSkipping ...")
-                continue
+            ex = config['executable']
         except KeyError as e:
-            LOGGER.error(f"Error parsing config file: {abs_path.as_posix()}, {e}\nSkipping...")
+            LOGGER.error(f"Config file: {abs_path.as_posix()} contains no executable param.\nSkipping...")
             continue
         LOGGER.debug(f"File type identified")
 
@@ -112,13 +105,8 @@ def resolve_config_file(path: Path) -> Path | None:
     if path.is_absolute():
         return path
 
-    ws_root = Path(get_package_share_directory(package_name))
-    v_path = ws_root / "vehicles" / path
-    v_path = v_path if v_path.is_file() else None
-    s_path = ws_root / "sensors" / path
-    s_path = s_path if s_path.is_file() else None
-
-    if v_path and s_path:
-        raise FileExistsError
-    else:
-        return v_path or s_path
+    package_configs = Path(get_package_share_directory(package_name)) / "package_resources"
+    resolved_path = package_configs / path
+    if not resolved_path.is_file():
+        raise FileNotFoundError(f"Could not find configs for: {path} in mavinsight configs folder.")
+    return resolved_path
