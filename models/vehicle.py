@@ -11,11 +11,11 @@ from visualization_msgs.msg import Marker
 
 # MAVInsight imports
 from models.frame_utils import frd_ned_2_flu_enu
-from models.graph_member import GraphMember
+from models.frame_member import FrameMember
 from models.platforms import Platforms
 from models.qos_profiles import viz_qos
 
-class Vehicle(GraphMember):
+class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
     This Class defines what information should be published for all Vehicles. (i.e.
     TF Frame for position, velocity `Marker`, etc).
@@ -38,7 +38,7 @@ class Vehicle(GraphMember):
     def __init__(self):
         super().__init__()
         self.latest_header = None
-        self.get_logger().info(f"Ingesting Vehicle params...")
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Vehicle params...")
 
         # ingest ROS parameters. Notify user when defaults are being used
 
@@ -113,14 +113,7 @@ class Vehicle(GraphMember):
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
-        # TODO: Decide where the map reference should live.
-        # this is a hardcoded reference point for foxglove's map feature in the 3D panel
-        self.create_publisher(NavSatFix, "/map_ref", 1).publish(NavSatFix(
-            header=Header(frame_id='map'),
-            latitude=32.5006765,
-            longitude=-83.7512641,
-            altitude=100.75844396218884
-        ))
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
     def publish_position(self, msg: Odometry | VehicleOdometry):
         # header

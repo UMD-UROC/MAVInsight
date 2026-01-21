@@ -2,6 +2,7 @@
   chimera_d_3:
     ros__parameters:
       display_name: Chimera D3
+      executable: vehicle
       frame_name: d3_base_link
       namespace: "/uas3/"
       location_topic: "/uas3/global_position/local"

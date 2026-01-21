@@ -2,6 +2,7 @@
   two_axis_gimbal:
     ros__parameters:
       display_name: 2-Axis Gimbal (D4)
+      executable: gimbal
       frame_name: d4_gimbal_frame
       offset:
         - 0.5

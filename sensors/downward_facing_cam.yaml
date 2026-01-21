@@ -2,6 +2,7 @@
   downward_facing_cam:
     ros__parameters:
       display_name: Downward-Facing Camera (D4)
+      executable: camera
       frame_name: d4_dcam
       offset:
         - 0.0

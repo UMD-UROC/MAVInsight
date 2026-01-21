@@ -2,6 +2,7 @@
   rangefinder:
     ros__parameters:
       display_name: Rangefinder (Gimbal)
+      executable: rangefinder
       frame_name: rangefinder_frame
       offset:
         - 0.5

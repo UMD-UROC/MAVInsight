@@ -24,11 +24,7 @@ class GraphMember(Node):
         subclasses.
     """
 
-    FRAME_NAME: str
     DISPLAY_NAME: str
-    PARENT_FRAME: str
-    POSE_FRAME: str #TODO: When getting this from px4_msgs, the frame is embedded in the message. get this dynamically from the message?
-                    #TODO: We may need to split this into a position frame and orientation frame (px4 odometry quaternion reported as body->world, but position reported as world->body)
     _tab_char: str
 
     # Constructors
@@ -38,29 +34,11 @@ class GraphMember(Node):
         self.get_logger().info(f"Ingesting Graph Member params...")
 
         # Ingest ROS parameters. Notify user when defaults are being used.
-        if self.has_parameter('frame_name'):
-            self.FRAME_NAME = self.get_parameter('frame_name').get_parameter_value().string_value
-        else:
-            self.default_parameter_warning("frame_name")
-            self.FRAME_NAME = "base_link"
-
         if self.has_parameter('display_name'):
             self.DISPLAY_NAME = self.get_parameter('display_name').get_parameter_value().string_value
         else:
             self.default_parameter_warning("display_name")
             self.DISPLAY_NAME = "Default Vehicle Name"
-
-        if self.has_parameter('parent_frame'):
-            self.PARENT_FRAME = self.get_parameter('parent_frame').get_parameter_value().string_value
-        else:
-            self.get_logger().info(f'parent_frame param not set, using standard default: "map"')
-            self.PARENT_FRAME = "map"
-
-        if self.has_parameter('pose_frame'):
-            self.POSE_FRAME = self.get_parameter('pose_frame').get_parameter_value().string_value
-        else:
-            self.get_logger().info(f"pose_frame param not set, using standard default: \"enu_flu\".")
-            self.POSE_FRAME = 'enu_flu'
 
         if self.has_parameter('tab_char'):
             self._tab_char = self.get_parameter('tab_char').get_parameter_value().string_value
@@ -82,6 +60,8 @@ class GraphMember(Node):
             time.sleep(5.0)
         self.get_logger().info(f"Foxglove found.")
 
+        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Graph Member initialized!")
+
     def default_parameter_warning(self, param_name: str):
         """Helper method to output a boilerplate warning indicating that a default
         parameter is being used in the absence of a defined valid parameter.
@@ -92,9 +72,6 @@ class GraphMember(Node):
             The name of the parameter to be used in the warning.
         """
         self.get_logger().warn(f"Parameter {param_name} not set in config file. using default")
-
-    def __str__(self):
-        return f"{self.DISPLAY_NAME}\nTransform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
 
     @classmethod
     def main(cls, args=None):

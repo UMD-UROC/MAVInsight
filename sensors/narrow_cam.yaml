@@ -2,6 +2,7 @@
   narrow_cam:
     ros__parameters:
       display_name: RGB Camera (D4)
+      executable: camera
       frame_name: d4_rgb
       offset:
         - 0.0
