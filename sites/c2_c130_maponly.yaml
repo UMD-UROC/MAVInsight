@@ -1,0 +1,10 @@
+/**/*:
+  c2_c130_maponly:
+    ros__parameters:
+      name: c130_crash_maponly
+      display_name: CE2 | Map Only
+      executable: site
+      geofence_topic: /geofence
+      ground_truth_topic: /ground_truths
+      map_ref_topic: /map_ref
+      map_ref: [32.5006765, -83.7512641, 100.75844396218884]

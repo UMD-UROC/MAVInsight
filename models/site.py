@@ -24,6 +24,10 @@ class Site(GraphMember):
         super().__init__()
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Site params...")
 
+        self.geofence_points = None
+        self.gt_msg_points = None
+        self.map_lla_ref = None
+
         # geofence
         if self.has_parameter("geofence_topic"):
             self.GEOFENCE_TOPIC = self.get_parameter("geofence_topic").get_parameter_value().string_value
@@ -33,6 +37,8 @@ class Site(GraphMember):
 
         if self.has_parameter("geofence"):
             geofence = self.get_parameter("geofence").get_parameter_value().double_array_value
+        else:
+            geofence = None
 
         # GTs
         if self.has_parameter("ground_truth_topic"):
@@ -43,6 +49,8 @@ class Site(GraphMember):
 
         if self.has_parameter("ground_truths"):
             ground_truths = self.get_parameter("ground_truths").get_parameter_value().double_array_value
+        else:
+            ground_truths = None
 
         # map frame
         if self.has_parameter("map_frame"):
@@ -59,6 +67,8 @@ class Site(GraphMember):
 
         if self.has_parameter("map_ref"):
             map_ref = self.get_parameter("map_ref").get_parameter_value().double_array_value
+        else:
+            raise RuntimeError(f"Site: {self.DISPLAY_NAME}'s map param is not set. Unable to initialize site.")
 
         if self.has_parameter("name"):
             self.NAME = self.get_parameter("name").get_parameter_value().string_value
@@ -74,6 +84,7 @@ class Site(GraphMember):
             altitude=map_ref[2]
         )
 
+        # TODO: better null protection
         if geofence:
             if len(geofence) % 2 != 0:
                 raise ValueError(
