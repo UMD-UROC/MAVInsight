@@ -1,0 +1,9 @@
+/**/*:
+  uas4_tba:
+    ros__parameters:
+      name: uas4_tba
+      display_name: UAS4 TargetBoxArray Viz
+      executable: tba_viz
+      localization_topic: /uas4/target_locations
+      loc_viz_topic: /uas4_tbas_recent
+      map_ref: [32.5006765, -83.7512641, 100.75844396218884]

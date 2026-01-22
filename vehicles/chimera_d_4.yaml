@@ -11,3 +11,5 @@
       platform: quad
       sensors:
         - two_axis_gimbal.yaml
+      viz:
+        - uas4_tba.yaml

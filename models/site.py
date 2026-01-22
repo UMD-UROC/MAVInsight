@@ -10,7 +10,7 @@ from visualization_msgs.msg import Marker
 # MAVInsight imports
 from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
-from models.qos_profiles import viz_qos
+from models.qos_profiles import reliable_qos, viz_qos
 
 class Site(GraphMember):
 
@@ -104,7 +104,7 @@ class Site(GraphMember):
             gt_coords = list(zip(ground_truths[0::2], ground_truths[1::2]))
             gt_fixes = [lla_2_enu(self.map_lla_ref, NavSatFix(latitude=lat, longitude=lon)) for lat, lon in gt_coords]
             self.gt_msg_points = [Point(x=e, y=n, z=u) for e, n, u in gt_fixes]
-            self.gt_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GT_TOPIC}", viz_qos)
+            self.gt_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GT_TOPIC}", reliable_qos)
 
         self.timer = self.create_timer(3, self.site_foxglove_loiter)
 
