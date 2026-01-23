@@ -3,12 +3,18 @@
     ros__parameters:
       coord_frame: enu_flu
       display_name: Chimera D4
+      ekf_origin_fix_topic: /uas4/ekf_origin/fix
+      ekf_origin_frame: uas4_ekf_origin
       executable: vehicle
       frame_name: d4_base_link
+      home_fix_topic: "/uas4/home_position/fix"
+      home_frame_name: "uas4_home_position"
+      home_position_topic: "/uas4/home_position/home"
       namespace: "/uas4/"
-      location_topic: "/uas4/global_position/local"
-      parent_frame: map
+      location_topic: "/uas4/local_position/pose"
+      parent_frame: uas4_ekf_origin
       platform: quad
+      velocity_topic: "uas4/local_position/velocity_local"
       sensors:
         - two_axis_gimbal.yaml
       viz:

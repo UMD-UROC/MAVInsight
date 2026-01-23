@@ -3,11 +3,11 @@
     ros__parameters:
       name: uroc_elevation_crescent
       display_name: UROC | Altimeter Plane Localization Crescent Test
+      local_fix_topic: /uas4/ekf_origin/fix
+      local_frame: uas4_ekf_origin
       executable: site
-      geofence_topic: /geofence
-      ground_truth_topic: /ground_truths
-      map_ref_topic: /map_ref
-      map_ref: [38.313374810066726, -76.55213997390143, 5.497203939465441]
+      geofence_topic: /viz/site/uroc_elevation_crescent/geofence
+      ground_truth_topic: /viz/site/uroc_elevation_crescent/ground_truths
       geofence: [
         38.31348860320978,-76.55199565818212,
         38.31347685238692, -76.55233824513549,

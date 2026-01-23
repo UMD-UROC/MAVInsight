@@ -55,3 +55,9 @@ def lla_2_enu(reference: NavSatFix, destination: NavSatFix, ignore_alt: bool=Tru
         reference.altitude,
         deg=True
     )
+
+def enu_2_lla(ref: NavSatFix, e, n, u):
+    return pm.enu2geodetic(
+        e=e, n=n, u=u,
+        lat0=ref.latitude, lon0=ref.longitude, h0=ref.altitude
+    )

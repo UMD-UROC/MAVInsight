@@ -17,6 +17,7 @@ class TBA_Viz(GraphMember):
 
     def __init__(self):
         super().__init__()
+        self.LOCAL_FIX = None
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Localization params....")
 
@@ -25,36 +26,44 @@ class TBA_Viz(GraphMember):
         else:
             raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} localization topic param not set. Unable to initialize localization vizualization.")
 
-        if self.has_parameter('loc_viz_topic'):
-            loc_viz_topic = self.get_parameter('loc_viz_topic').get_parameter_value().string_value
+        if self.has_parameter('loc_viz_topic_latest'):
+            loc_viz_topic_latest = self.get_parameter('loc_viz_topic_latest').get_parameter_value().string_value
         else:
-            self.default_parameter_warning('loc_viz_topic')
-            loc_viz_topic = 'localization_viz_recent'
+            self.default_parameter_warning('loc_viz_topic_latest')
+            loc_viz_topic_latest = '/viz/tbas/latest'
 
-        if self.has_parameter('loc_viz_topic_all'):
-            loc_viz_topic_all = self.get_parameter('loc_viz_topic_all').get_parameter_value().string_value
+        if self.has_parameter('loc_viz_topic_previous'):
+            loc_viz_topic_previous = self.get_parameter('loc_viz_topic_previous').get_parameter_value().string_value
         else:
-            self.default_parameter_warning('loc_viz_topic_all')
-            loc_viz_topic_all = 'localization_viz_all'
+            self.default_parameter_warning('loc_viz_topic_previous')
+            loc_viz_topic_previous = '/viz/tbas/previous'
 
-        if self.has_parameter('map_ref'): # TODO: Make this dynamic/smarter (i hate this)
-            map_ref_param = self.get_parameter('map_ref').get_parameter_value().double_array_value
-            self.REF_FIX = NavSatFix(latitude=map_ref_param[0], longitude=map_ref_param[1], altitude=map_ref_param[2])
+        if self.has_parameter('localization_frame'):
+            self.LOC_FRAME = self.get_parameter('localization_frame').get_parameter_value().string_value
         else:
-            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} map reference param not set. Unable to initialize node.")
+            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} localization frame param not set. Unable to initialize localization vizualization.")
 
-        self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, reliable_qos)
-        self.last_pub = self.create_publisher(MarkerArray, loc_viz_topic, reliable_qos)
-        self.all_pub = self.create_publisher(MarkerArray, loc_viz_topic_all, reliable_qos)
+        if self.has_parameter('local_fix_topic'):
+            local_fix_topic = self.get_parameter('local_fix_topic').get_parameter_value().string_value
+        else:
+            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} local fix topic param not set. Unable to initialize localization vizualization.")
+
+        self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, viz_qos)
+        self.create_subscription(NavSatFix, local_fix_topic, self.update_local_fix, viz_qos)
+        self.latest_pub = self.create_publisher(MarkerArray, loc_viz_topic_latest, reliable_qos)
+        self.previous_pub = self.create_publisher(MarkerArray, loc_viz_topic_previous, reliable_qos)
 
         self.i = 0
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Localization Visualization initialized!")
+
+    def update_local_fix(self, msg: NavSatFix):
+        self.LOCAL_FIX = msg
 
     def loc_cb(self, msg: TargetBoxArray):
         self.get_logger().debug("tba received")
         drone_pose = msg.uav_local_pose.pose.pose
         drone_marker = Marker(
-            header=Header(frame_id="map"), #TODO: Make the origin frame accessible to all Graph Members
+            header=Header(frame_id=self.LOC_FRAME),
             ns="drone",
             id=0,
             pose=drone_pose,
@@ -78,7 +87,7 @@ class TBA_Viz(GraphMember):
         (x, y, z, w) = R_world_gimbal.as_quat()
 
         rangefinder_marker = Marker(
-            header=Header(frame_id="map"),
+            header=Header(frame_id=self.LOC_FRAME),
             ns="rangefinder",
             id=0,
             type=Marker.ARROW,
@@ -93,86 +102,87 @@ class TBA_Viz(GraphMember):
 
         markers = [drone_marker, rangefinder_marker]
 
-        rangefinder_fixes = []
-        gimbal_plane_fixes = []
-        altimeter_plane_fixes = []
+        if self.LOCAL_FIX:
+            rangefinder_fixes = []
+            gimbal_plane_fixes = []
+            altimeter_plane_fixes = []
 
-        for box in msg.uav_target_boxes:
-            assert(isinstance(box, TargetBox))
-            if box.target_location_altimeter_plane:
-                loc: NavSatFix = box.target_location_altimeter_plane
-                altimeter_plane_fixes.append(lla_2_enu(self.REF_FIX, loc))
+            for box in msg.uav_target_boxes:
+                assert(isinstance(box, TargetBox))
+                if box.target_location_altimeter_plane:
+                    loc: NavSatFix = box.target_location_altimeter_plane
+                    altimeter_plane_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
 
-            if box.target_location_gimbal_plane:
-                loc: NavSatFix = box.target_location_gimbal_plane
-                gimbal_plane_fixes.append(lla_2_enu(self.REF_FIX, loc))
+                if box.target_location_gimbal_plane:
+                    loc: NavSatFix = box.target_location_gimbal_plane
+                    gimbal_plane_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
 
-            if box.target_location_rangefinder:
-                loc: NavSatFix = box.target_location_rangefinder
-                rangefinder_fixes.append(lla_2_enu(self.REF_FIX, loc))
+                if box.target_location_rangefinder:
+                    loc: NavSatFix = box.target_location_rangefinder
+                    rangefinder_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
 
-        rangefinder_points = [Point(x=e, y=n, z=u) for e, n, u in rangefinder_fixes]
-        gimbal_plane_points = [Point(x=e, y=n, z=u) for e, n, u in gimbal_plane_fixes]
-        altimeter_plane_points = [Point(x=e, y=n, z=u) for e, n, u in altimeter_plane_fixes]
+            rangefinder_points = [Point(x=e, y=n, z=u) for e, n, u in rangefinder_fixes]
+            gimbal_plane_points = [Point(x=e, y=n, z=u) for e, n, u in gimbal_plane_fixes]
+            altimeter_plane_points = [Point(x=e, y=n, z=u) for e, n, u in altimeter_plane_fixes]
 
-        markers.append(Marker(
-            header=Header(frame_id="map"),
-            ns="range_last",
-            id=0,
-            type=Marker.SPHERE_LIST,
-            action=Marker.ADD,
-            points=rangefinder_points,
-            scale=Vector3(x=0.25, y=0.25, z=0.25),
-            color=ColorRGBA(r=255.0/255.0, g=0.0/255.0, b=0.0/255.0, a=0.75)
-        ))
+            markers.append(Marker(
+                header=Header(frame_id=self.LOC_FRAME),
+                ns="range_last",
+                id=0,
+                type=Marker.SPHERE_LIST,
+                action=Marker.ADD,
+                points=rangefinder_points,
+                scale=Vector3(x=0.25, y=0.25, z=0.25),
+                color=ColorRGBA(r=255.0/255.0, g=0.0/255.0, b=0.0/255.0, a=0.75)
+            ))
 
-        markers.append(Marker(
-            header=Header(frame_id="map"),
-            ns="gimb_plane_last",
-            id=0,
-            type=Marker.SPHERE_LIST,
-            action=Marker.ADD,
-            points=gimbal_plane_points,
-            scale=Vector3(x=0.25, y=0.25, z=0.25),
-            color=ColorRGBA(r=0.0/255.0, g=255.0/255.0, b=0.0/255.0, a=0.75)
-        ))
+            markers.append(Marker(
+                header=Header(frame_id=self.LOC_FRAME),
+                ns="gimb_plane_last",
+                id=0,
+                type=Marker.SPHERE_LIST,
+                action=Marker.ADD,
+                points=gimbal_plane_points,
+                scale=Vector3(x=0.25, y=0.25, z=0.25),
+                color=ColorRGBA(r=0.0/255.0, g=255.0/255.0, b=0.0/255.0, a=0.75)
+            ))
 
-        markers.append(Marker(
-            header=Header(frame_id="map"),
-            ns="alt_plane_last",
-            id=0,
-            type=Marker.SPHERE_LIST,
-            action=Marker.ADD,
-            points=altimeter_plane_points,
-            scale=Vector3(x=0.25, y=0.25, z=0.25),
-            color=ColorRGBA(r=0.0/255.0, g=0.0/255.0, b=255.0/255.0, a=0.75)
-        ))
+            markers.append(Marker(
+                header=Header(frame_id=self.LOC_FRAME),
+                ns="alt_plane_last",
+                id=0,
+                type=Marker.SPHERE_LIST,
+                action=Marker.ADD,
+                points=altimeter_plane_points,
+                scale=Vector3(x=0.25, y=0.25, z=0.25),
+                color=ColorRGBA(r=0.0/255.0, g=0.0/255.0, b=255.0/255.0, a=0.75)
+            ))
 
-        altimeter_beam_points = []
-        drone_point = Point(x=drone_pose.position.x, y=drone_pose.position.y, z=drone_pose.position.z)
-        for p in altimeter_plane_points:
-            altimeter_beam_points.append(drone_point)
-            altimeter_beam_points.append(p)
+            altimeter_beam_points = []
+            drone_point = Point(x=drone_pose.position.x, y=drone_pose.position.y, z=drone_pose.position.z)
+            for p in altimeter_plane_points:
+                altimeter_beam_points.append(drone_point)
+                altimeter_beam_points.append(p)
 
-        markers.append(Marker(
-            header=Header(frame_id='map'),
-            ns="alt_beams_last",
-            id=0,
-            type=Marker.LINE_LIST,
-            action=Marker.ADD,
-            points=altimeter_beam_points,
-            scale=Vector3(x=0.05, y=0.05, z=0.05),
-            color=ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
-        ))
+            markers.append(Marker(
+                header=Header(frame_id=self.LOC_FRAME),
+                ns="alt_beams_last",
+                id=0,
+                type=Marker.LINE_LIST,
+                action=Marker.ADD,
+                points=altimeter_beam_points,
+                scale=Vector3(x=0.05, y=0.05, z=0.05),
+                color=ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
+            ))
 
-        self.last_pub.publish(MarkerArray(markers=markers))
+        self.latest_pub.publish(MarkerArray(markers=markers))
 
-        [last_to_all(m, self.i) for m in markers]
-        self.all_pub.publish(MarkerArray(markers=markers))
+        [latest_to_previous(m, self.i) for m in markers]
+        self.previous_pub.publish(MarkerArray(markers=markers))
 
         self.i+=1
 
-def last_to_all(input:Marker, i: int):
+def latest_to_previous(input:Marker, i: int):
     input.id = i
     input.ns = input.ns.replace("last", "all")
     return input

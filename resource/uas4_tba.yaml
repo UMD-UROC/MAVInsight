@@ -4,7 +4,8 @@
       name: uas4_tba
       display_name: UAS4 TargetBoxArray Viz
       executable: tba_viz
+      local_fix_topic: /uas4/ekf_origin/fix
+      localization_frame: uas4_ekf_origin
       localization_topic: /uas4/target_locations
-      loc_viz_topic: /viz/uas4/tbas_recent
-      loc_viz_topic_all: /viz/uas4/tbas_all
-      map_ref: [38.313374810066726, -76.55213997390143, 5.497203939465441]
+      loc_viz_topic_latest: /viz/uas4/tbas/latest
+      loc_viz_topic_previous: /viz/uas4/tbas/previous
