@@ -29,16 +29,25 @@ class Localization(GraphMember):
             loc_viz_topic = self.get_parameter('loc_viz_topic').get_parameter_value().string_value
         else:
             self.default_parameter_warning('loc_viz_topic')
-            loc_viz_topic = 'localization_viz'
+            loc_viz_topic = 'localization_viz_recent'
+
+        if self.has_parameter('loc_viz_topic_all'):
+            loc_viz_topic_all = self.get_parameter('loc_viz_topic_all').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning('loc_viz_topic_all')
+            loc_viz_topic_all = 'localization_viz_all'
 
         if self.has_parameter('map_ref'): # TODO: Make this dynamic/smarter (i hate this)
             map_ref_param = self.get_parameter('map_ref').get_parameter_value().double_array_value
             self.REF_FIX = NavSatFix(latitude=map_ref_param[0], longitude=map_ref_param[1], altitude=map_ref_param[2])
         else:
             raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} map reference param not set. Unable to initialize node.")
-        self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, reliable_qos)
-        self.pub = self.create_publisher(MarkerArray, loc_viz_topic, reliable_qos)
 
+        self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, reliable_qos)
+        self.last_pub = self.create_publisher(MarkerArray, loc_viz_topic, reliable_qos)
+        self.all_pub = self.create_publisher(MarkerArray, loc_viz_topic_all, reliable_qos)
+
+        self.i = 0
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Localization Visualization initialized!")
 
     def loc_cb(self, msg: TargetBoxArray):
@@ -89,10 +98,7 @@ class Localization(GraphMember):
         altimeter_plane_fixes = []
 
         for box in msg.uav_target_boxes:
-            i = 0
-            self.get_logger().debug("found boxes")
             assert(isinstance(box, TargetBox))
-            self.get_logger().debug(f"processing box: {i}")
             if box.target_location_altimeter_plane:
                 loc: NavSatFix = box.target_location_altimeter_plane
                 altimeter_plane_fixes.append(lla_2_enu(self.REF_FIX, loc))
@@ -111,9 +117,9 @@ class Localization(GraphMember):
 
         markers.append(Marker(
             header=Header(frame_id="map"),
-            ns="rangefinder_loczn",
+            ns="range_last",
             id=0,
-            type=Marker.CUBE_LIST,
+            type=Marker.SPHERE_LIST,
             action=Marker.ADD,
             points=rangefinder_points,
             scale=Vector3(x=0.25, y=0.25, z=0.25),
@@ -122,7 +128,7 @@ class Localization(GraphMember):
 
         markers.append(Marker(
             header=Header(frame_id="map"),
-            ns="gimbal_plane_loczn",
+            ns="gimb_plane_last",
             id=0,
             type=Marker.SPHERE_LIST,
             action=Marker.ADD,
@@ -133,13 +139,40 @@ class Localization(GraphMember):
 
         markers.append(Marker(
             header=Header(frame_id="map"),
-            ns="alt_plane_loczn",
+            ns="alt_plane_last",
             id=0,
-            type=Marker.POINTS,
+            type=Marker.SPHERE_LIST,
             action=Marker.ADD,
             points=altimeter_plane_points,
             scale=Vector3(x=0.25, y=0.25, z=0.25),
-            color=ColorRGBA(r=255.0/255.0, g=248.0/255.0, b=51.0/255.0, a=0.75)
+            color=ColorRGBA(r=0.0/255.0, g=0.0/255.0, b=255.0/255.0, a=0.75)
         ))
 
-        self.pub.publish(MarkerArray(markers=markers))
+        altimeter_beam_points = []
+        drone_point = Point(x=drone_pose.position.x, y=drone_pose.position.y, z=drone_pose.position.z)
+        for p in altimeter_plane_points:
+            altimeter_beam_points.append(drone_point)
+            altimeter_beam_points.append(p)
+
+        markers.append(Marker(
+            header=Header(frame_id='map'),
+            ns="alt_beams_last",
+            id=0,
+            type=Marker.LINE_LIST,
+            action=Marker.ADD,
+            points=altimeter_beam_points,
+            scale=Vector3(x=0.05, y=0.05, z=0.05),
+            color=ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
+        ))
+
+        self.last_pub.publish(MarkerArray(markers=markers))
+
+        [last_to_all(m, self.i) for m in markers]
+        self.all_pub.publish(MarkerArray(markers=markers))
+
+        self.i+=1
+
+def last_to_all(input:Marker, i: int):
+    input.id = i
+    input.ns = input.ns.replace("last", "all")
+    return input
