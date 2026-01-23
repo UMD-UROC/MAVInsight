@@ -4,7 +4,6 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from typing import Optional
 
-
 # ROS2 message imports
 import mavros_msgs.msg
 import px4_msgs.msg

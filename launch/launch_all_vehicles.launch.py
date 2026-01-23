@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger("vehicle_launch_logger")
-initial_paths_overrides = ["chimera_d_4.yaml", "c2_c130_crash.yaml"]
+initial_paths_overrides = ["chimera_d_4.yaml", "uroc_elevation_crescent.yaml"]
 
 def generate_launch_description():
     ld = LaunchDescription()
@@ -95,9 +95,17 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         ))
 
         # add sub-members to list of nodes to be built
-        LOGGER.info(f"Adding new config files: {config.get('sensors', [])}")
-        for sens in config.get("sensors", []):
-            paths.append(Path(sens))
+        sensors = config.get('sensors', [])
+        if len(sensors) > 0:
+            LOGGER.info(f"Adding new sensor files: {sensors}")
+            for sens in config.get("sensors", []):
+                paths.append(Path(sens))
+
+        vizs = config.get('viz', [])
+        if len(vizs) > 0:
+            LOGGER.info(f"Adding new visualization files: {vizs}")
+            for viz in config.get("viz", []):
+                paths.append(Path(viz))
 
     return node_list
 

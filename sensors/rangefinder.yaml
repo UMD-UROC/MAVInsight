@@ -5,8 +5,8 @@
       executable: rangefinder
       frame_name: rangefinder_frame
       offset:
-        - 0.5
-        - -0.25
+        - 0.0
+        - 0.025
         - 0.0
       range_topic: /uas4/gimbal_lidar_50m
       parent_frame: d4_gimbal_frame

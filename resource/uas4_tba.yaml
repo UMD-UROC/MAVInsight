@@ -1,0 +1,11 @@
+/**/*:
+  uas4_tba:
+    ros__parameters:
+      name: uas4_tba
+      display_name: UAS4 TargetBoxArray Viz
+      executable: tba_viz
+      local_fix_topic: /uas4/ekf_origin/fix
+      localization_frame: uas4_ekf_origin
+      localization_topic: /uas4/target_locations
+      loc_viz_topic_latest: /viz/uas4/tbas/latest
+      loc_viz_topic_previous: /viz/uas4/tbas/previous

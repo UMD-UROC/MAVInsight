@@ -2,18 +2,19 @@
 from __future__ import annotations
 
 # ROS2 message imports
-from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, Vector3
-from nav_msgs.msg import Odometry, Path
+from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
+from mavros_msgs.msg import HomePosition
+from nav_msgs.msg import Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
 # MAVInsight imports
-from models.frame_utils import frd_ned_2_flu_enu
+from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
 from models.frame_member import FrameMember
 from models.platforms import Platforms
-from models.qos_profiles import viz_qos
+from models.qos_profiles import reliable_qos, viz_qos
 
 class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -56,12 +57,48 @@ class Vehicle(FrameMember):
             self.default_parameter_warning("namespace")
             namespace = "/uas/"
 
+        # ekf origin
+        if self.has_parameter("ekf_origin_fix_topic"):
+            ekf_topic = self.get_parameter("ekf_origin_fix_topic").get_parameter_value().string_value
+        else:
+            raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin fix topic param not set. Unable to initialize Vehicle node.")
+
+        if self.has_parameter("ekf_origin_frame"):
+            self.EKF_FRAME = self.get_parameter("ekf_origin_frame").get_parameter_value().string_value
+        else:
+            raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin frame param not set. Unable to initialize Vehicle node.")
+
+        # Home Position
+        if self.has_parameter("home_position_topic"):
+            home_pos_topic = self.get_parameter("home_position_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("home_position_topic")
+            home_pos_topic = "/home_position/home"
+
+        if self.has_parameter("home_fix_topic"):
+            home_fix_topic = self.get_parameter("home_fix_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("home_fix_topic")
+            home_fix_topic = "/home_position/fix"
+
+        if self.has_parameter("home_frame_topic"):
+            self.HOME_FRAME = self.get_parameter("home_frame_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("home_frame_topic")
+            self.HOME_FRAME = "home_position"
+
         # Location Topic
         if self.has_parameter("location_topic"):
             self.LOCATION_TOPIC = self.get_parameter("location_topic").get_parameter_value().string_value
         else:
             self.default_parameter_warning("location_topic")
             self.LOCATION_TOPIC = "gps"
+
+        if self.has_parameter("velocity_topic"):
+            velocity_topic = self.get_parameter("velocity_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("velocity_topic")
+            velocity_topic = "vel"
 
         # Platform Type
         if self.has_parameter("platform"):
@@ -82,20 +119,25 @@ class Vehicle(FrameMember):
             if msg_schema_str.lower() == "px4_msgs":
                 self.LOCATION_MSG_TYPE = VehicleOdometry
             else:
-                self.LOCATION_MSG_TYPE = Odometry
+                self.LOCATION_MSG_TYPE = PoseStamped
         else:
             self.default_parameter_warning("message_schema")
-            self.LOCATION_MSG_TYPE = Odometry
+            self.LOCATION_MSG_TYPE = PoseStamped
 
         # Initialize subscribers
         self.create_subscription(self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos)
+        self.create_subscription(HomePosition, home_pos_topic, self.home_cb, viz_qos)
+        self.create_subscription(TwistStamped, velocity_topic, self.update_velocity, viz_qos)
+        self.VELOCITY = None
 
         # Initialize publishers
-        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", 1)
+        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
+        self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, reliable_qos)
+        self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
 
         # Publisher for velocity vector visualization markers
         self.velocity_vector_marker_pub = self.create_publisher(
-            Marker, f"{namespace}velocityVector", 1
+            Marker, f"{namespace}velocityVector", reliable_qos
         )
 
         # Internal storage for path visualizer
@@ -115,7 +157,10 @@ class Vehicle(FrameMember):
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
-    def publish_position(self, msg: Odometry | VehicleOdometry):
+    def update_velocity(self, msg: TwistStamped):
+        self.VELOCITY=msg
+
+    def publish_position(self, msg: PoseStamped | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas
         head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
@@ -150,19 +195,20 @@ class Vehicle(FrameMember):
             self.drone_pos = [pos_out.x, pos_out.y, pos_out.z]
 
         else:
-            assert isinstance(msg, Odometry)
-            pos_in = msg.pose.pose.position
+            assert isinstance(msg, PoseStamped)
+            pos_in = msg.pose.position
             pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
-            tf_out = Transform(translation=pos_out, rotation=msg.pose.pose.orientation)
+            tf_out = Transform(translation=pos_out, rotation=msg.pose.orientation)
 
             path_update.pose.position.x = float(pos_in.x)
             path_update.pose.position.y = float(pos_in.y)
             path_update.pose.position.z = float(pos_in.z)
-            path_update.pose.orientation = msg.pose.pose.orientation
+            path_update.pose.orientation = msg.pose.orientation
 
             # Extract velocity from Odometry message
-            vel_in = msg.twist.twist.linear
-            self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
+            if self.VELOCITY:
+                vel_in = self.VELOCITY.twist.linear
+                self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
             self.drone_pos = [float(pos_in.x), float(pos_in.y), float(pos_in.z)]
 
@@ -177,6 +223,29 @@ class Vehicle(FrameMember):
         # Path update
         self.path.poses.append(path_update) # type: ignore
         self.path.header.stamp = path_update.header.stamp
+
+    def home_cb(self, msg: HomePosition):
+        home_fix = NavSatFix(
+            header=Header(frame_id=self.HOME_FRAME),
+            latitude=msg.geo.latitude,
+            longitude=msg.geo.longitude,
+            altitude=msg.geo.altitude
+        )
+        self.home_fix_pub.publish(home_fix)
+        self.tf_broadcaster.sendTransform(TransformStamped(
+            header=Header(stamp=self.get_clock().now().to_msg(), frame_id=self.HOME_FRAME),
+            child_frame_id=self.EKF_FRAME,
+            transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
+        ))
+
+        (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
+        self.ekf_fix_pub.publish(NavSatFix(
+            header=Header(frame_id=self.EKF_FRAME),
+            latitude=lat_e,
+            longitude=lon_e,
+            altitude=alt_e
+        ))
+
 
     def publish_path(self):
         if self.path.poses:
