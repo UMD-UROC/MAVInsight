@@ -7,4 +7,4 @@
       localization_topic: /uas4/target_locations
       loc_viz_topic: /viz/uas4/tbas_recent
       loc_viz_topic_all: /viz/uas4/tbas_all
-      map_ref: [32.5006765, -83.7512641, 100.75844396218884]
+      map_ref: [38.313374810066726, -76.55213997390143, 5.497203939465441]
