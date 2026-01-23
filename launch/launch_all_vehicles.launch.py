@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger("vehicle_launch_logger")
-initial_paths_overrides = ["chimera_d_4.yaml", "c2_c130_crash.yaml"]
+initial_paths_overrides = ["chimera_d_4.yaml", "uroc_elevation_crescent.yaml"]
 
 def generate_launch_description():
     ld = LaunchDescription()
