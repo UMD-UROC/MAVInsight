@@ -9,7 +9,7 @@ from std_msgs.msg import ColorRGBA, Header
 from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
-from models.frame_utils import lla_2_enu
+from models.frame_utils import frd_2_flu, lla_2_enu
 from models.graph_member import GraphMember
 from models.qos_profiles import viz_qos, reliable_qos
 
@@ -57,11 +57,16 @@ class Localization(GraphMember):
 
         drone_q = drone_pose.orientation
         drone_r = R.from_quat([drone_q.x, drone_q.y, drone_q.z, drone_q.w])
+        (dr_x, dr_y, dr_z) = drone_r.as_euler("xyz", degrees=True)
 
-        gimbal_q = msg.gimbal_attitude_quaternion
-        gimbal_r = R.from_quat([gimbal_q.x, gimbal_q.y, gimbal_q.z, gimbal_q.w])
+        gimbal_q_frd = msg.gimbal_attitude_quaternion
+        gimbal_r_frd = R.from_quat([gimbal_q_frd.x, gimbal_q_frd.y, gimbal_q_frd.z, gimbal_q_frd.w])
+        gimbal_r_enu = frd_2_flu(gimbal_r_frd)
+        assert(isinstance(gimbal_r_enu, R))
+        (gr_x, gr_y, gr_z) = gimbal_r_enu.as_euler('xyz', degrees=True)
 
-        (x, y, z, w) = (drone_r * gimbal_r).as_quat()
+        R_world_gimbal = R.from_euler('yz', [gr_y, dr_z], degrees=True)
+        (x, y, z, w) = R_world_gimbal.as_quat()
 
         rangefinder_marker = Marker(
             header=Header(frame_id="map"),
