@@ -40,7 +40,7 @@ setup(
             "gimbal = models.sensor:Gimbal.main",
             "rangefinder = models.sensor:Rangefinder.main",
             "site = models.site:Site.main",
-            "tba_viz = models.localization:Localization.main"
+            "tba_viz = models.tba_viz:TBA_Viz.main"
         ],
     },
 )

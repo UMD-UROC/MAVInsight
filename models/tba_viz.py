@@ -13,7 +13,7 @@ from models.frame_utils import frd_2_flu, lla_2_enu
 from models.graph_member import GraphMember
 from models.qos_profiles import viz_qos, reliable_qos
 
-class Localization(GraphMember):
+class TBA_Viz(GraphMember):
 
     def __init__(self):
         super().__init__()
