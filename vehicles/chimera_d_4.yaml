@@ -12,6 +12,7 @@
       home_position_topic: "/uas4/home_position/home"
       namespace: "/uas4/"
       location_topic: "/uas4/local_position/pose"
+      altitude_topic: "/uas4/altitude"
       parent_frame: uas4_ekf_origin
       platform: quad
       velocity_topic: "uas4/local_position/velocity_local"

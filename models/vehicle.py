@@ -3,7 +3,7 @@ from __future__ import annotations
 
 # ROS2 message imports
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
-from mavros_msgs.msg import HomePosition
+from mavros_msgs.msg import Altitude, HomePosition
 from nav_msgs.msg import Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
@@ -42,6 +42,11 @@ class Vehicle(FrameMember):
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Vehicle params...")
 
         # ingest ROS parameters. Notify user when defaults are being used
+        if self.has_parameter("altitude_topic"):
+            alt_topic = self.get_parameter("altitude_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning('altitude_topic')
+            alt_topic = "/altitude"
 
         # Global Refresh Rate
         if self.has_parameter("refresh_rate"):
@@ -125,9 +130,11 @@ class Vehicle(FrameMember):
             self.LOCATION_MSG_TYPE = PoseStamped
 
         # Initialize subscribers
+        self.create_subscription(Altitude, alt_topic, self.update_alt, viz_qos)
         self.create_subscription(self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos)
         self.create_subscription(HomePosition, home_pos_topic, self.home_cb, viz_qos)
         self.create_subscription(TwistStamped, velocity_topic, self.update_velocity, viz_qos)
+        self.ALTITUDE = None
         self.VELOCITY = None
 
         # Initialize publishers
@@ -156,6 +163,9 @@ class Vehicle(FrameMember):
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
+
+    def update_alt(self, msg: Altitude):
+        self.ALTITUDE=msg
 
     def update_velocity(self, msg: TwistStamped):
         self.VELOCITY=msg
@@ -223,6 +233,21 @@ class Vehicle(FrameMember):
         # Path update
         self.path.poses.append(path_update) # type: ignore
         self.path.header.stamp = path_update.header.stamp
+
+        # Publish altimeter plane
+        if self.ALTITUDE:
+            alt_t = Transform(translation=tf_out.translation)
+            # I believe this bottom clearance represents the altimeter plane we should be seeking.
+            # altitude.local seems to publish the drone height consistent with reality (observing the rangefinder point)
+            # altitude.relative seems to publish the drone height relative to the home position (not sure why this is inconsistent with reality)
+            # altitude.bottom_clearance : I'm assuming this would be consistent with the plane that the drone is hovering over.
+            alt_t.translation.z -= self.ALTITUDE.bottom_clearance
+            self.tf_broadcaster.sendTransform(TransformStamped(
+                header=head_out,
+                child_frame_id=f"{self.FRAME_NAME}_alt_plane",
+                transform=alt_t
+            ))
+
 
     def home_cb(self, msg: HomePosition):
         home_fix = NavSatFix(
