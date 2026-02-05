@@ -63,6 +63,12 @@ class TBA_Viz(GraphMember):
             self.default_parameter_warning('bbox_topic')
             bbox_topic = 'bboxes'
 
+        if self.has_parameter("mesh_resource_path"):
+            self.mesh_resource_path = self.get_parameter("mesh_resource_path").get_parameter_value().string_value
+            self.get_logger().info(f"Mesh Resource Path detected: {self.mesh_resource_path}")
+        else:
+            self.mesh_resource_path = None
+
         self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, viz_qos)
         self.create_subscription(NavSatFix, local_fix_topic, self.update_local_fix, viz_qos)
         self.latest_pub = self.create_publisher(MarkerArray, loc_viz_topic_latest, reliable_qos)
@@ -84,16 +90,33 @@ class TBA_Viz(GraphMember):
         self.generage_bboxes(msg)
 
         drone_pose = msg.uav_local_pose.pose.pose
-        drone_marker = Marker(
-            header=Header(frame_id=self.LOC_FRAME),
-            ns="drone",
-            id=0,
-            pose=drone_pose,
-            type=Marker.CUBE,
-            action=Marker.ADD,
-            scale=Vector3(x=0.5, y=0.56, z=0.24),
-            color=ColorRGBA(r=153.0/255.0, g=153.0/255.0, b=153.0/255.0, a=0.9)
-        )
+        drone_marker = Marker()
+        drone_marker.header=Header(frame_id=self.LOC_FRAME)
+        drone_marker.ns="drone"
+        drone_marker.id=0
+        drone_marker.pose.position.x=drone_pose.position.x
+        drone_marker.pose.position.y=drone_pose.position.y
+        drone_marker.pose.position.z=drone_pose.position.z
+        drone_marker.pose.orientation.x=drone_pose.orientation.x
+        drone_marker.pose.orientation.y=drone_pose.orientation.y
+        drone_marker.pose.orientation.z=drone_pose.orientation.z
+        drone_marker.pose.orientation.w=drone_pose.orientation.w
+        drone_marker.type=Marker.MESH_RESOURCE
+        drone_marker.mesh_resource=self.mesh_resource_path
+        drone_marker.mesh_use_embedded_materials=True
+        drone_marker.action=Marker.ADD
+        drone_marker.scale=Vector3(x=0.001, y=0.001, z=0.001)
+        drone_marker.color=ColorRGBA(r=153.0/255.0, g=153.0/255.0, b=153.0/255.0, a=0.9)
+
+        R_fix = R.from_euler('xyz', [0.0, 0.0, -math.pi/2], degrees=False)
+        q = drone_marker.pose.orientation
+        R_drone = R.from_quat([q.x, q.y, q.z, q.w])
+
+        (x_fix, y_fix, z_fix, w_fix) = (R_fix * R_drone).as_quat()
+        drone_marker.pose.orientation.x = x_fix
+        drone_marker.pose.orientation.y = y_fix
+        drone_marker.pose.orientation.z = z_fix
+        drone_marker.pose.orientation.w = w_fix
 
         drone_q = drone_pose.orientation
         drone_r = R.from_quat([drone_q.x, drone_q.y, drone_q.z, drone_q.w])

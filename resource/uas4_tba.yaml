@@ -11,3 +11,4 @@
       loc_viz_topic_previous: /viz/uas4/tbas/previous
       target_image_topic: uas4/loczn_img
       bbox_topic: uas4/bboxes
+      mesh_resource_path: "package://mavinsight/package_resources/chimera_v3_viz.stl"
