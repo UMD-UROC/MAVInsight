@@ -9,3 +9,5 @@
       localization_topic: /uas4/target_locations
       loc_viz_topic_latest: /viz/uas4/tbas/latest
       loc_viz_topic_previous: /viz/uas4/tbas/previous
+      target_image_topic: uas4/loczn_img
+      bbox_topic: uas4/bboxes

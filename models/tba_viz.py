@@ -1,11 +1,14 @@
 # python imports
+import math
 from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 from cdcl_umd_msgs.msg import TargetBoxArray, TargetBox
+from foxglove_msgs.msg import ImageAnnotations, Point2, PointsAnnotation, TextAnnotation
 from geometry_msgs.msg import Point, Pose, Quaternion, Vector3
-from sensor_msgs.msg import NavSatFix
+from sensor_msgs.msg import Image, NavSatFix
 from std_msgs.msg import ColorRGBA, Header
+from vision_msgs.msg import BoundingBox2D
 from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
@@ -48,10 +51,24 @@ class TBA_Viz(GraphMember):
         else:
             raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} local fix topic param not set. Unable to initialize localization vizualization.")
 
+        if self.has_parameter('target_image_topic'):
+            image_topic = self.get_parameter('target_image_topic').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning('target_image_topic')
+            image_topic = 'loczn_img'
+
+        if self.has_parameter('bbox_topic'):
+            bbox_topic = self.get_parameter('bbox_topic').get_parameter_value().string_value
+        else:
+            self.default_parameter_warning('bbox_topic')
+            bbox_topic = 'bboxes'
+
         self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, viz_qos)
         self.create_subscription(NavSatFix, local_fix_topic, self.update_local_fix, viz_qos)
         self.latest_pub = self.create_publisher(MarkerArray, loc_viz_topic_latest, reliable_qos)
         self.previous_pub = self.create_publisher(MarkerArray, loc_viz_topic_previous, reliable_qos)
+        self.loczn_img_pub = self.create_publisher(Image, image_topic, reliable_qos)
+        self.bbox_pub = self.create_publisher(ImageAnnotations, bbox_topic, reliable_qos)
 
         self.i = 0
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Localization Visualization initialized!")
@@ -61,6 +78,11 @@ class TBA_Viz(GraphMember):
 
     def loc_cb(self, msg: TargetBoxArray):
         self.get_logger().debug("tba received")
+
+        self.loczn_img_pub.publish(msg.source_img)
+
+        self.generage_bboxes(msg)
+
         drone_pose = msg.uav_local_pose.pose.pose
         drone_marker = Marker(
             header=Header(frame_id=self.LOC_FRAME),
@@ -83,7 +105,7 @@ class TBA_Viz(GraphMember):
         assert(isinstance(gimbal_r_enu, R))
         (gr_x, gr_y, gr_z) = gimbal_r_enu.as_euler('xyz', degrees=True)
 
-        R_world_gimbal = R.from_euler('yz', [gr_y, dr_z], degrees=True)
+        R_world_gimbal = R.from_euler('yz', [float(gr_y), float(dr_z)], degrees=True)
         (x, y, z, w) = R_world_gimbal.as_quat()
 
         rangefinder_marker = Marker(
@@ -181,6 +203,70 @@ class TBA_Viz(GraphMember):
         self.previous_pub.publish(MarkerArray(markers=markers))
 
         self.i+=1
+
+    def generage_bboxes(self, msg: TargetBoxArray):
+        out = ImageAnnotations()
+        out.points = []
+        out.texts = []
+
+        for i, tb in enumerate(msg.uav_target_boxes):
+            assert(isinstance(tb, TargetBox))
+            ann = PointsAnnotation()
+            ann.timestamp = msg.header.stamp
+            ann.type = PointsAnnotation.LINE_LOOP
+            ann.thickness = 2.0
+            ann.outline_color.r = 0.0
+            ann.outline_color.g = 1.0
+            ann.outline_color.b = 0.0
+            ann.outline_color.a = 1.0
+            ann.outline_colors = []
+            ann.fill_color.r = 0.0
+            ann.fill_color.g = 1.0
+            ann.fill_color.b = 0.0
+            ann.fill_color.a = 0.12
+
+            box:BoundingBox2D = tb.target_bbox
+            cx = box.center.position.x
+            cy = box.center.position.y
+            th = box.center.theta
+            hx = box.size_x / 2
+            hy = box.size_y / 2
+
+            ct = math.cos(th)
+            st = math.sin(th)
+
+            points = [
+                (cx - hx, cy - hy),
+                (cx + hx, cy - hy),
+                (cx + hx, cy + hy),
+                (cx - hx, cy + hy)
+            ]
+
+            ann.points = []
+            for x, y in points:
+                dx = x - cx
+                dy = y - cy
+                ann.points.append(Point2(x=float(cx + ct*dx - st*dy), y=float(cy + st*dx + ct*dy)))
+
+            out.points.append(ann)
+
+            txt = TextAnnotation()
+            txt.timestamp = msg.header.stamp
+            txt.position = ann.points[0]
+            txt.text = str(i)
+            txt.font_size = 30.0
+            txt.text_color.r = 1.0
+            txt.text_color.g = 1.0
+            txt.text_color.b = 1.0
+            txt.text_color.a = 1.0
+            txt.background_color.r = 0.0
+            txt.background_color.g = 0.0
+            txt.background_color.b = 0.0
+            txt.background_color.a = 0.6
+
+            out.texts.append(txt)
+
+        self.bbox_pub.publish(out)
 
 def latest_to_previous(input:Marker, i: int):
     input.id = i
