@@ -12,9 +12,19 @@ jobs:
   format-lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout (PR head)
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Checkout (push or non-PR)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -47,13 +57,10 @@ jobs:
       - name: Apply fixes with Ruff and formatters (if needed)
         if: steps.ruff.outcome != 'success' || steps.rest_checks.outputs.rc != '0'
         run: |
-          # Use the ruff action to apply fixes (install ruff first)
           python -m pip install --upgrade pip
           pip install ruff
-          # Apply Ruff autofixes and format
           ruff check --fix . || true
           ruff format || true
-          # Run black and isort to apply their formatting
           pip install black isort
           black . --target-version py310 || true
           isort . || true
