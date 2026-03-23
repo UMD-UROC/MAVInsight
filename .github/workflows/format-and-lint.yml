@@ -1,0 +1,87 @@
+name: Format, Lint & Test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  format-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (PR head)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Checkout (push or non-PR)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install tooling (black, isort, pytest)
+        run: |
+          python -m pip install --upgrade pip
+          pip install black isort pytest
+
+      - name: Run Ruff (checks)
+        id: ruff
+        uses: astral-sh/ruff-action@v3.6.1
+        continue-on-error: true
+
+      - name: Run black/isort/pytest checks
+        id: rest_checks
+        continue-on-error: true
+        run: |
+          set +e
+          black --check . --target-version py310; r1=$?
+          isort --check-only .; r2=$?
+          pytest -q; r3=$?
+          rc=$((r1|r2|r3))
+          echo "rc=$rc" >> $GITHUB_OUTPUT
+
+      - name: Apply fixes with Ruff and formatters (if needed)
+        if: steps.ruff.outcome != 'success' || steps.rest_checks.outputs.rc != '0'
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          ruff check --fix . || true
+          ruff format || true
+          pip install black isort
+          black . --target-version py310 || true
+          isort . || true
+
+      - name: Commit & push formatting changes
+        if: (steps.ruff.outcome != 'success' || steps.rest_checks.outputs.rc != '0') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: github-actions[bot]
+          author_email: github-actions[bot]@users.noreply.github.com
+          message: "chore: apply autoformatters"
+          add: "."
+          push: true
+
+      - name: Re-run Ruff checks
+        if: steps.ruff.outcome != 'success' || steps.rest_checks.outputs.rc != '0'
+        uses: astral-sh/ruff-action@v3.6.1
+
+      - name: Re-run black/isort/pytest checks
+        if: steps.ruff.outcome != 'success' || steps.rest_checks.outputs.rc != '0'
+        run: |
+          black --check . --target-version py310
+          isort --check-only .
+          pytest -q
