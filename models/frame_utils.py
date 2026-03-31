@@ -23,6 +23,12 @@ R_frd_flu = R.from_matrix(np.array([
     [0, 0,-1]
 ]))
 
+R_cam_frd = R.from_matrix(np.array([
+    [0, 0, 1],
+    [1, 0, 0],
+    [0, 1, 0],
+]))
+
 def frd_2_flu(input):
     if isinstance(input, Quaternion):
         r = R.from_quat([input.x, input.y, input.z, input.w])
@@ -54,4 +60,10 @@ def lla_2_enu(reference: NavSatFix, destination: NavSatFix, ignore_alt: bool=Tru
         reference.longitude,
         reference.altitude,
         deg=True
+    )
+
+def enu_2_lla(ref: NavSatFix, e, n, u):
+    return pm.enu2geodetic(
+        e=e, n=n, u=u,
+        lat0=ref.latitude, lon0=ref.longitude, h0=ref.altitude
     )

@@ -3,6 +3,7 @@ import time
 
 # ROS2 message imports
 from geometry_msgs.msg import Point, Vector3
+from mavros_msgs.msg import HomePosition
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import ColorRGBA, Header
 from visualization_msgs.msg import Marker
@@ -10,13 +11,13 @@ from visualization_msgs.msg import Marker
 # MAVInsight imports
 from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
-from models.qos_profiles import viz_qos
+from models.qos_profiles import reliable_qos, viz_qos
 
 class Site(GraphMember):
 
     GEOFENCE_TOPIC: str
     GT_TOPIC: str
-    MAP_FRAME: str
+    LOCAL_FRAME: str
     MAP_REF_TOPIC: str
     NAME: str
 
@@ -24,9 +25,7 @@ class Site(GraphMember):
         super().__init__()
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Site params...")
 
-        self.geofence_points = None
-        self.gt_msg_points = None
-        self.map_lla_ref = None
+        self.LOCAL_FIX = None
 
         # geofence
         if self.has_parameter("geofence_topic"):
@@ -36,9 +35,9 @@ class Site(GraphMember):
             self.GEOFENCE_TOPIC = "/geofence"
 
         if self.has_parameter("geofence"):
-            geofence = self.get_parameter("geofence").get_parameter_value().double_array_value
+            self.geofence = self.get_parameter("geofence").get_parameter_value().double_array_value
         else:
-            geofence = None
+            self.geofence = None
 
         # GTs
         if self.has_parameter("ground_truth_topic"):
@@ -48,27 +47,20 @@ class Site(GraphMember):
             self.GT_TOPIC = "/ground_truths"
 
         if self.has_parameter("ground_truths"):
-            ground_truths = self.get_parameter("ground_truths").get_parameter_value().double_array_value
+            self.ground_truths = self.get_parameter("ground_truths").get_parameter_value().double_array_value
         else:
-            ground_truths = None
+            self.ground_truths = None
 
-        # map frame
-        if self.has_parameter("map_frame"):
-            self.MAP_FRAME = self.get_parameter("map_frame").get_parameter_value().string_value
+        # local fix
+        if self.has_parameter("local_fix_topic"):
+            local_fix_topic = self.get_parameter("local_fix_topic").get_parameter_value().string_value
         else:
-            self.MAP_FRAME = "map"
+            raise RuntimeError(f"Site Node: {self.DISPLAY_NAME} local fix param not set. Unable to initialize Site node.")
 
-        # map reference
-        if self.has_parameter("map_ref_topic"):
-            self.MAP_REF_TOPIC = self.get_parameter("map_ref_topic").get_parameter_value().string_value
+        if self.has_parameter("local_frame"):
+            self.LOCAL_FRAME = self.get_parameter("local_frame").get_parameter_value().string_value
         else:
-            self.default_parameter_warning("map_ref_topic")
-            self.MAP_REF_TOPIC = "/map_ref"
-
-        if self.has_parameter("map_ref"):
-            map_ref = self.get_parameter("map_ref").get_parameter_value().double_array_value
-        else:
-            raise RuntimeError(f"Site: {self.DISPLAY_NAME}'s map param is not set. Unable to initialize site.")
+            raise RuntimeError(f"Site Node: {self.DISPLAY_NAME} local frame not set. Unable to initialize Site node.")
 
         if self.has_parameter("name"):
             self.NAME = self.get_parameter("name").get_parameter_value().string_value
@@ -76,59 +68,53 @@ class Site(GraphMember):
             self.default_parameter_warning("name")
             self.NAME = "site"
 
-        self.map_ref_pub = self.create_publisher(NavSatFix, f"/{self.NAME}{self.MAP_REF_TOPIC}", 1)
-        self.map_lla_ref = NavSatFix(
-            header=Header(frame_id=self.MAP_FRAME),
-            latitude=map_ref[0],
-            longitude=map_ref[1],
-            altitude=map_ref[2]
-        )
-
-        # TODO: better null protection
-        if geofence:
-            if len(geofence) % 2 != 0:
-                raise ValueError(
-                    f"Non-even geofence list length. Ensure all lats and lons are paired.\n" +
-                    f"length: {len(geofence)}"
-                )
-            self.geofence_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GEOFENCE_TOPIC}", viz_qos)
-
-            vertices = list(zip(geofence[0::2], geofence[1::2]))
-            # close the loop
-            if vertices[0] != vertices[-1]:
-                vertices.append(vertices[0])
-            vertices = [lla_2_enu(self.map_lla_ref, NavSatFix(latitude=lat, longitude=lon)) for lat, lon in vertices]
-            self.geofence_points = [Point(x=e, y=n, z=u) for e, n, u in vertices]
-
-        if ground_truths:
-            gt_coords = list(zip(ground_truths[0::2], ground_truths[1::2]))
-            gt_fixes = [lla_2_enu(self.map_lla_ref, NavSatFix(latitude=lat, longitude=lon)) for lat, lon in gt_coords]
-            self.gt_msg_points = [Point(x=e, y=n, z=u) for e, n, u in gt_fixes]
-            self.gt_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GT_TOPIC}", viz_qos)
-
         self.timer = self.create_timer(3, self.site_foxglove_loiter)
+
+        self.create_subscription(NavSatFix, local_fix_topic, self.update_local_fix, viz_qos)
+
+        self.geofence_pub = self.create_publisher(Marker, self.GEOFENCE_TOPIC, reliable_qos)
+        self.gt_pub = self.create_publisher(Marker, f"/{self.NAME}{self.GT_TOPIC}", reliable_qos)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Site Initialized...")
 
+    def update_local_fix(self, msg: NavSatFix):
+        self.LOCAL_FIX = msg
+
     def site_foxglove_loiter(self):
-        # TODO make this a one-time publish... maybe
-        if self.geofence_points:
+        if not self.LOCAL_FIX:
+            return
+
+        if self.geofence:
+            if len(self.geofence) % 2 != 0:
+                raise ValueError(
+                    f"Non-even geofence list length. Ensure all lats and lons are paired.\n" +
+                    f"length: {len(self.geofence)}"
+                )
+            vertices = list(zip(self.geofence[0::2], self.geofence[1::2]))
+            # close the loop
+            if vertices[0] != vertices[-1]:
+                vertices.append(vertices[0])
+            vertices = [lla_2_enu(self.LOCAL_FIX, NavSatFix(latitude=lat, longitude=lon)) for lat, lon in vertices]
+            geofence_points = [Point(x=e, y=n, z=u) for e, n, u in vertices]
             self.geofence_pub.publish(Marker(
-                header=Header(frame_id=self.MAP_FRAME),
+                header=Header(frame_id=self.LOCAL_FRAME),
                 type=Marker.LINE_STRIP,
                 action=Marker.ADD,
-                points=self.geofence_points,
+                points=geofence_points,
                 scale=Vector3(x=0.1, y=0.1, z=1.0),
                 color=ColorRGBA(r=253.0/256.0, g=138.0/256.0, a=1.0)
             ))
-        if self.gt_msg_points:
+
+        if self.ground_truths:
+            gt_coords = list(zip(self.ground_truths[0::2], self.ground_truths[1::2]))
+            gt_fixes = [lla_2_enu(self.LOCAL_FIX, NavSatFix(latitude=lat, longitude=lon)) for lat, lon in gt_coords]
+            gt_msg_points = [Point(x=e, y=n, z=u) for e, n, u in gt_fixes]
+
             self.gt_pub.publish(Marker(
-                header=Header(frame_id=self.MAP_FRAME),
+                header=Header(frame_id=self.LOCAL_FRAME),
                 type=Marker.POINTS,
                 action=Marker.ADD,
-                points=self.gt_msg_points,
+                points=gt_msg_points,
                 scale=Vector3(x=1.0, y=1.0, z=1.0),
                 color=ColorRGBA(r=1.0, g=1.0, b=1.0, a=1.0)
             ))
-
-        self.map_ref_pub.publish(self.map_lla_ref)

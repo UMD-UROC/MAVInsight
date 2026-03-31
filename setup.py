@@ -39,7 +39,8 @@ setup(
             "camera = models.sensor:Camera.main",
             "gimbal = models.sensor:Gimbal.main",
             "rangefinder = models.sensor:Rangefinder.main",
-            "site = models.site:Site.main"
+            "site = models.site:Site.main",
+            "tba_viz = models.tba_viz:TBA_Viz.main"
         ],
     },
 )

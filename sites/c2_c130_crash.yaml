@@ -3,10 +3,11 @@
     ros__parameters:
       name: c130_crash
       display_name: Challenge Event 2 Course 1 | C130 Crash
+      local_fix_topic: /uas4/ekf_origin/fix
+      local_frame: uas4_ekf_origin
       executable: site
-      geofence_topic: /geofence
-      ground_truth_topic: /ground_truths
-      map_ref_topic: /map_ref
+      geofence_topic: site/c130_crash/geofence
+      ground_truth_topic: site/c130_crash/ground_truths
       map_ref: [32.5006765, -83.7512641, 100.75844396218884]
       geofence: [
         32.50089349, -83.750512,
