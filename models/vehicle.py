@@ -141,11 +141,7 @@ class Vehicle(FrameMember):
         self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, reliable_qos)
         self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
-
-        # Publisher for velocity vector visualization markers
-        self.velocity_vector_marker_pub = self.create_publisher(
-            Marker, f"{namespace}velocityVector", reliable_qos
-        )
+        self.velocity_vector_pub = self.create_publisher(Marker, f"{namespace}velocityVector", reliable_qos)
 
         # Internal storage for path visualizer
         self.path = Path()
@@ -180,6 +176,7 @@ class Vehicle(FrameMember):
         # transform
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
             assert isinstance(msg, VehicleOdometry)
+            # TODO: Header needs the timestamp from the PX4 Message. Include when uXRCE is introduced.
             pos_in = msg.position
 
             pos_out = self.position_conversion(x_in=float(pos_in[0]), y_in=float(pos_in[1]), z_in=float(pos_in[2]))
@@ -236,7 +233,7 @@ class Vehicle(FrameMember):
         self.path.poses.append(path_update) # type: ignore
         self.path.header.stamp = path_update.header.stamp
 
-        # Publish altimeter plane
+        # Publish altimeter plane viz. investigation only, not required
         if self.ALTITUDE:
             alt_t = Transform(translation=tf_out.translation)
             # I believe this bottom clearance represents the altimeter plane we should be seeking.
@@ -252,22 +249,43 @@ class Vehicle(FrameMember):
 
 
     def home_cb(self, msg: HomePosition):
+        """
+        TODO: If the home position is going to be in our frame tree, then we need to
+        better understand the implications, and make sure this is being TIME SYNCED
+        properly.
+        Current:
+            Using the home position's local coordinates to back-out the local EKF
+            Origin so that we can use the EKF-centered local position estimate in
+            our tree. In theory, this allows us capture ekf corrections, which only
+            present obviously in changes to the home position. Other benefits
+            include better viz for the TRUE local position origin and home position
+            viz.
+        Alternative:
+            Just ground the Local position estimate as the authoritative loczn position
+            estimate.
+            OR
+            Use the Home-position grounded local position estimate and chain
+            off of that. (no-op, really)
+        TIME SYNC CONSIDERATION:
+            DTC rosbags show home position is only published @ .5Hz,but home position
+            correction seems infrequent. SEE: Foxglove PLOT viz of local coords of home.
+        """
         home_fix = NavSatFix(
-            header=Header(frame_id=self.HOME_FRAME),
+            header=Header(frame_id=self.HOME_FRAME, stamp=msg.header.stamp),
             latitude=msg.geo.latitude,
             longitude=msg.geo.longitude,
             altitude=msg.geo.altitude
         )
         self.home_fix_pub.publish(home_fix)
         self.tf_broadcaster.sendTransform(TransformStamped(
-            header=Header(stamp=self.get_clock().now().to_msg(), frame_id=self.HOME_FRAME),
+            header=Header(stamp=msg.header.stamp, frame_id=self.HOME_FRAME),
             child_frame_id=self.EKF_FRAME,
             transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
         ))
 
         (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
         self.ekf_fix_pub.publish(NavSatFix(
-            header=Header(frame_id=self.EKF_FRAME),
+            header=Header(frame_id=self.EKF_FRAME, stamp=msg.header.stamp),
             latitude=lat_e,
             longitude=lon_e,
             altitude=alt_e
@@ -313,7 +331,7 @@ class Vehicle(FrameMember):
         velocity_vector_marker.color.r = 1.0
         velocity_vector_marker.color.a = 1.0
 
-        self.velocity_vector_marker_pub.publish(velocity_vector_marker)
+        self.velocity_vector_pub.publish(velocity_vector_marker)
 
     def position_conversion(self, x_in:float, y_in:float, z_in:float) -> Vector3:
         if 'ned' in self.POSE_FRAME:
