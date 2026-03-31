@@ -23,6 +23,12 @@ R_frd_flu = R.from_matrix(np.array([
     [0, 0,-1]
 ]))
 
+R_cam_frd = R.from_matrix(np.array([
+    [0, 0, 1],
+    [1, 0, 0],
+    [0, 1, 0],
+]))
+
 def frd_2_flu(input):
     if isinstance(input, Quaternion):
         r = R.from_quat([input.x, input.y, input.z, input.w])

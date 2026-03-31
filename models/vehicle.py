@@ -173,13 +173,9 @@ class Vehicle(FrameMember):
     def publish_position(self, msg: PoseStamped | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas
-        head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
-
-        # keep the most recent header for downstream publishers
-        self.latest_header = head_out
+        head_out = Header(frame_id=self.PARENT_FRAME)
 
         path_update = PoseStamped()
-        path_update.header = head_out
 
         # transform
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
@@ -206,6 +202,7 @@ class Vehicle(FrameMember):
 
         else:
             assert isinstance(msg, PoseStamped)
+            head_out.stamp = msg.header.stamp
             pos_in = msg.pose.position
             pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
             tf_out = Transform(translation=pos_out, rotation=msg.pose.orientation)
@@ -221,6 +218,11 @@ class Vehicle(FrameMember):
                 self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
             self.drone_pos = [float(pos_in.x), float(pos_in.y), float(pos_in.z)]
+
+        path_update.header = head_out
+
+        # keep the most recent header for downstream publishers
+        self.latest_header = head_out
 
         # build TF
         t = TransformStamped(
