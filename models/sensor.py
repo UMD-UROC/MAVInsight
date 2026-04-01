@@ -13,7 +13,10 @@ from sensor_msgs.msg import Range
 from std_msgs.msg import Header
 
 # ROS imports
-from std_msgs.msg import Header
+from rclpy.duration import Duration
+from rclpy.time import Time
+from tf2_geometry_msgs import do_transform_pose
+from tf2_ros import Buffer, TransformListener
 
 # MAVInsight imports
 from models.frame_utils import frd_2_flu, frd_ned_2_flu_enu
@@ -192,6 +195,8 @@ class Gimbal(Sensor):
         super().__init__()
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Camera params...")
 
+        self.body_orientation = Quaternion()
+
         # initialize gimbal state variables
         self.retract_commanded = False
         self.neutral_position_commanded = False
@@ -240,22 +245,40 @@ class Gimbal(Sensor):
             case _:
                 raise ValueError(f"Cannot initialize {self.DISPLAY_NAME} Gimbal viz with message schema: {self.msg_schema}.")
         self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
-        self.create_subscription(body_msg_type, self.BODY_TOPIC, self.update_body, viz_qos)
+
+        # TF listeners
+        '''
+        reducing the buffer length from the default 10 seconds. this listener should only
+        ever need to lookup recent body transforms corresponding to the current gimbal
+        transform. If this fails, then telemetry data is getting delayed, and we have
+        MUCH bigger problems lol. It IS possible that tfs could time out under heavy cpu
+        load, though... will need testing/experiment
+        '''
+        self.tf_buffer = Buffer(cache_time=Duration(seconds=3))
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Gimbal initialized!")
 
-    def update_body(self, msg : Odometry | px4_msgs.msg.VehicleOdometry):
-        match self.msg_schema:
-            case "px4_msgs":
-                assert isinstance(msg, px4_msgs.msg.VehicleOdometry)
-                self.body_orientation = frd_ned_2_flu_enu(Quaternion(x=msg.q[1], y=msg.q[2], z=msg.q[3], w=msg.q[0])) #type: ignore
-            case "mavros":
-                assert isinstance(msg, Odometry)
-                self.body_orientation = msg.pose.pose.orientation
-            case _:
-                raise ValueError(f"Unable to assess body orientation for {self.DISPLAY_NAME} with schema {self.msg_schema}.")
+    def publish_orientation(self, msg : mavros_msgs.msg.GimbalDeviceAttitudeStatus):
+        # NOTE: in mavros, GimbalDeviceAttitudeStatus message does NOT reflect commanded flags, only available flags. (confirmed)
+        # enu -> d4_base_link -> gimbal_mount -> gimbal_ref_frame -> gimbal_frame
 
-        # re-compute the gimbal's ref frame TODO: Figure out where the following functionality should live.
+        # lookup the body transform from the tf tree
+        try:
+            t = self.tf_buffer.lookup_transform(
+                # TODO parameterize this
+                "uas4_ekf_origin",
+                "d4_base_link",
+                Time.from_msg(msg.header.stamp),
+                Duration(nanoseconds=0.5e9) # type: ignore
+            )
+        except Exception as e:
+            self.get_logger().warn(f"TF lookup failed during gimbal ref frame construction: {e}")
+            return
+
+        self.body_orientation = t.transform.rotation
+
+        # construct the gimbal reference frame based on the active flags
         R_body_ref = R.identity()
 
         if self.roll_lock_commanded or self.pitch_lock_commanded or self.yaw_lock_commanded:
@@ -271,40 +294,11 @@ class Gimbal(Sensor):
 
         # publish gimbal ref frame
         tf = TransformStamped(
-            header=Header(frame_id=self.PARENT_FRAME),
+            header=Header(frame_id=self.PARENT_FRAME, stamp=msg.header.stamp),
             child_frame_id=self.GIMBAL_REF_FRAME_NAME,
             transform=Transform(rotation=q_body_ref)
         )
         self.tf_broadcaster.sendTransform(tf)
-
-        # create native coordinate frame if present TODO revisit after establishing basic frame
-        # self.get_logger().info(f"Sensor Input Coordinate Frame: {self.COORD_FRAME_TF}")
-        # if self.COORD_FRAME_TF == 'enu-flu':
-        #     pass
-        # elif (self.COORD_FRAME_TF in ['ned-frd']):
-        #     native_frame_name = f"{self.FRAME_NAME}_{self.COORD_FRAME_TF}"
-        #     self.get_logger().info(f"Recognized non-enu/flu coord frame. Building new static tf endpoint with child frame: {native_frame_name}")
-        #     if self.COORD_FRAME_TF == 'ned-frd':
-
-        #         header = Header(frame_id=self.PARENT_FRAME)
-
-        #         (x, y, z, w) = R_frd_flu
-        #         ros_quat = Quaternion(x=x, y=y, z=z, w=w)
-
-        #         transform = Transform(rotation=ros_quat)
-
-        #         native_frame=TransformStamped(
-        #             header=header,
-        #             child_frame_id=native_frame_name,
-        #             transform=transform
-        #         )
-        #     self.tf_static_broadcaster.sendTransform(native_frame)
-        # else:
-        #     self.get_logger().warn(f"Unrecognized coordinate frame: {self.COORD_FRAME_TF}. Skipping Native Frame creation.")
-
-    def publish_orientation(self, msg : mavros_msgs.msg.GimbalDeviceAttitudeStatus):
-        # NOTE: in mavros, GimbalDeviceAttitudeStatus message does NOT reflect commanded flags, only available flags.
-        # enu -> d4_base_link -> gimbal_mount -> gimbal_ref_frame -> gimbal_frame
 
         # construct gimbal attitude frame
         R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
@@ -333,6 +327,7 @@ class Gimbal(Sensor):
         # publish commanded attitude.
         cmd_tf = TransformStamped(
             child_frame_id=f"{self.FRAME_NAME}_commanded_attitude",
+            # crazy that this message doesn't include a header or a timestamp
             header = Header(frame_id=self.GIMBAL_REF_FRAME_NAME),
             transform = Transform(rotation=frd_2_flu(msg.q))
         )
