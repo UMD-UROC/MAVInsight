@@ -110,14 +110,18 @@ class Sensor(FrameMember):
             static_frame_name = f"{self.FRAME_NAME}_mount"
 
             # build tf
-            s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
-            self.get_logger().debug(f"broadcasting {self.PARENT_FRAME} to {static_frame_name}:\n{s_t}")
-            self.tf_static_broadcaster.sendTransform(s_t)
+            self.s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
+
+            # start up timer to periodically publish this static frame for late-joiners
+            self.create_timer(10.0, self.broadcast_static)
 
             # allow sub-members to attach to this new offset frame
             self.PARENT_FRAME = static_frame_name
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Sensor initialized!")
+
+    def broadcast_static(self):
+        self.tf_static_broadcaster.sendTransform(self.s_t)
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t1 = self._tab_char * tab_depth
