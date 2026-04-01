@@ -10,64 +10,60 @@ from launch_ros.actions import Node
 package_name = "mavinsight"
 namespace = "viz"
 LOGGER = logging.get_logger("vehicle_launch_logger")
-initial_paths_overrides = ["chimera_d_4.yaml", "c2_c130_crash.yaml"]
+share_dir = Path(get_package_share_directory(package_name))
+shared_resources = share_dir / "package_resources"
+global_config = shared_resources / 'global_node_config.yaml'
+launch_specs = shared_resources / 'launch_specs.yaml'
 
 def generate_launch_description():
     ld = LaunchDescription()
 
-    share_dir = Path(get_package_share_directory(package_name))
-    shared_resources = share_dir / "package_resources"
+    # TODO: make this command-line configurable?
+    initial_systems = extract_paths(launch_specs)
+    LOGGER.info(f"Initial systems: {initial_systems}")
 
-    global_config = shared_resources / 'global_node_config.yaml'
-
-    # TODO change behavior for empty initial paths override
-    initial_paths = [(shared_resources) / p for p in initial_paths_overrides]
-
-    LOGGER.info(f"Initial paths: {[p.name for p in initial_paths]}")
-
-    nodes = build_nodes(initial_paths, global_config)
+    nodes = build_nodes(initial_systems, global_config)
     for node in nodes:
         ld.add_action(node)
 
     return ld
 
-def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
+def build_nodes(paths: list[str], global_config: Path) -> list[Node]:
     LOGGER.debug("Starting build")
     # initialize set of processed paths and output list
     processed = set()
     node_list = []
+    available_configs = [p.name for p in shared_resources.glob("*.yaml")]
 
     while paths:
         # capture and error check next path
-        config_path = paths.pop()
-        LOGGER.info(f"Starting processing on {config_path.as_posix()}")
-        assert isinstance(config_path, Path), f"Unrecognized build_nodes input type."
-        if config_path.suffix != ".yaml":
-            LOGGER.error(f"Non-yaml config file detected: {config_path.as_posix()}. GraphMember configs must be yaml-encoded.\nSkipping...")
+        system_name = paths.pop()
+        if not system_name.endswith(".yaml"): system_name += ".yaml"
+        LOGGER.info(f"Starting processing on {system_name}")
+
+        # search the shared space for a yaml with this name
+        if system_name not in available_configs:
+            LOGGER.error(f"Could not find {system_name} among config files. Skipping...")
             continue
-        if config_path in processed:
-            LOGGER.error(f"Potential circular path detected in config files.\nConfig file: {config_path.as_posix()} is contained by a sub-member.\nSkipping...")
+        # check if we have already processed this file
+        if system_name in processed:
+            LOGGER.error(f"Potential circular path detected in config files.\nConfig file: {system_name} is contained by a sub-member.\nSkipping...")
             continue
         LOGGER.debug(f"non-circular path")
         # path is checkable, add to processed list
-        processed.add(config_path)
+        processed.add(system_name)
 
         # resolve filename to absolute path in either sensor config or vehicle config
-        try:
-            abs_path = resolve_config_file(config_path)
-        except FileExistsError:
-            LOGGER.error(f"Duplicate filenames in Vehicle + Sensor dirs for file: {config_path.as_posix()}.\nSkipping...")
-            continue
-        if abs_path is None:
-            LOGGER.error(f"Cannot find file: {config_path.as_posix()} in any MAVInsight config folder.\nSkipping...")
-            continue
+        path = shared_resources / system_name
+        if not path.is_file():
+            LOGGER.error(f"Could not resolve: \"{path}\" as Path.")
         LOGGER.debug(f"abs path acquired")
 
         # open file and confirm yaml encoding
-        with open(abs_path.as_posix(), "r", encoding="utf-8") as f:
+        with open(path.as_posix(), "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         if type(config) is not dict:
-            LOGGER.error(f"Error parsing file: {abs_path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
+            LOGGER.error(f"Error parsing file: {path.as_posix()} as yaml. GraphMember configs must be yaml-encoded.\nSkipping...")
             continue
         LOGGER.debug(f"file opened successfully")
 
@@ -80,7 +76,7 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         try:
             ex = config['executable']
         except KeyError as e:
-            LOGGER.error(f"Config file: {abs_path.as_posix()} contains no executable param.\nSkipping...")
+            LOGGER.error(f"Config file: {path.as_posix()} contains no \"executable\" param.\nSkipping...")
             continue
         LOGGER.debug(f"File type identified")
 
@@ -88,9 +84,9 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         node_list.append(Node(
             package=package_name,
             executable=ex,
-            name=abs_path.stem,
+            name=path.stem,
             namespace=namespace,
-            parameters=[global_config.as_posix(), abs_path.as_posix()],
+            parameters=[global_config.as_posix(), path.as_posix()],
             output="screen",
         ))
 
@@ -99,22 +95,21 @@ def build_nodes(paths: list[Path], global_config: Path) -> list[Node]:
         if len(sensors) > 0:
             LOGGER.info(f"Adding new sensor files: {sensors}")
             for sens in config.get("sensors", []):
-                paths.append(Path(sens))
+                paths.append(sens)
 
-        vizs = config.get('viz', [])
-        if len(vizs) > 0:
-            LOGGER.info(f"Adding new visualization files: {vizs}")
-            for viz in config.get("viz", []):
-                paths.append(Path(viz))
+        # still burgeoning functionality. removing until we build back up to localization viz
+        # vizs = config.get('viz', [])
+        # if len(vizs) > 0:
+        #     LOGGER.info(f"Adding new visualization files: {vizs}")
+        #     for viz in config.get("viz", []):
+        #         paths.append(Path(viz))
 
     return node_list
 
-def resolve_config_file(path: Path) -> Path | None:
-    if path.is_absolute():
-        return path
-
-    package_configs = Path(get_package_share_directory(package_name)) / "package_resources"
-    resolved_path = package_configs / path
-    if not resolved_path.is_file():
-        raise FileNotFoundError(f"Could not find configs for: {path} in mavinsight configs folder.")
-    return resolved_path
+def extract_paths(path: Path) -> list:
+    with open(path.as_posix(), "r", encoding="utf-8") as f:
+        specs = yaml.safe_load(f)
+    if type(specs) is not dict:
+        LOGGER.error(LOGGER.error(f"Error parsing file: {path.as_posix()} as yaml. Could not load specs"))
+        return []
+    return specs['vehicles']
