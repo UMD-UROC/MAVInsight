@@ -265,7 +265,7 @@ class Gimbal(Sensor):
 
         # lookup the body transform from the tf tree
         try:
-            t = self.tf_buffer.lookup_transform(
+            body_t = self.tf_buffer.lookup_transform(
                 # TODO parameterize this
                 "uas4_ekf_origin",
                 "d4_base_link",
@@ -276,7 +276,7 @@ class Gimbal(Sensor):
             self.get_logger().warn(f"TF lookup failed during gimbal ref frame construction: {e}")
             return
 
-        self.body_orientation = t.transform.rotation
+        self.body_orientation = body_t.transform.rotation
 
         # construct the gimbal reference frame based on the active flags
         R_body_ref = R.identity()
@@ -293,8 +293,14 @@ class Gimbal(Sensor):
         q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)
 
         # publish gimbal ref frame
+        '''
+        The ref frame is actually a "zeroed" reference frame for the gimbal based on the
+        position of the body at a given time. In order for this reference frame to be
+        consistent, it needs to be stamped with the timestamp of the body frame it is
+        relative to.(use body_t.header instead of msg.header)
+        '''
         tf = TransformStamped(
-            header=Header(frame_id=self.PARENT_FRAME, stamp=msg.header.stamp),
+            header=Header(frame_id=self.PARENT_FRAME, stamp=body_t.header.stamp),
             child_frame_id=self.GIMBAL_REF_FRAME_NAME,
             transform=Transform(rotation=q_body_ref)
         )
