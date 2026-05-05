@@ -7,6 +7,9 @@
       ekf_origin_frame: uas4_ekf_origin
       executable: vehicle
       frame_name: d4_base_link
+      gimbal_flags_topic: /uas4/gimbal_control/manager/set_attitude
+      gimbal_offset_frame: d4_gimbal_frame_offset
+      gimbal_ref_frame: d4_gimbal_frame_ref
       home_fix_topic: "/uas4/home_position/fix"
       home_frame_name: "uas4_home_position"
       home_position_topic: "/uas4/home_position/home"

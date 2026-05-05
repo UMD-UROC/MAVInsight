@@ -1,9 +1,12 @@
 # python imports
 from __future__ import annotations
 
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
 # ROS2 message imports
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
-from mavros_msgs.msg import Altitude, HomePosition
+from mavros_msgs.msg import Altitude, HomePosition, GimbalManagerSetAttitude
 from nav_msgs.msg import Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
@@ -15,6 +18,12 @@ from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
 from models.frame_member import FrameMember
 from models.platforms import Platforms
 from models.qos_profiles import reliable_qos, viz_qos
+
+FLAGS_RETRACT = 1
+FLAGS_NEUTRAL = 2
+FLAGS_ROLL_LOCK = 4
+FLAGS_PITCH_LOCK = 8
+FLAGS_YAW_LOCK = 16
 
 class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -154,11 +163,32 @@ class Vehicle(FrameMember):
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
 
+        # WIP: gimbal reference frame code
+        gimbal_flags_topic = self.get_parameter("gimbal_flags_topic").get_parameter_value().string_value
+        self.gimbal_offset_frame = self.get_parameter("gimbal_offset_frame").get_parameter_value().string_value
+        self.gimbal_ref_frame = self.get_parameter("gimbal_ref_frame").get_parameter_value().string_value
+        self.create_subscription(GimbalManagerSetAttitude, gimbal_flags_topic, self.update_gimbal_flags, viz_qos)
+        # initialize gimbal state variables
+        self.retract_commanded = False
+        self.neutral_position_commanded = False
+        self.roll_lock_commanded = False
+        self.pitch_lock_commanded = False
+        self.yaw_lock_commanded = False
+
         # Publisher timers
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
+
+    def update_gimbal_flags(self, msg:GimbalManagerSetAttitude):
+        flags = int(msg.flags)
+        self.retract_commanded = bool(flags & FLAGS_RETRACT)
+        self.neutral_position_commanded = bool(flags & FLAGS_NEUTRAL)
+        self.roll_lock_commanded = bool(flags & FLAGS_ROLL_LOCK)
+        self.pitch_lock_commanded = bool(flags & FLAGS_PITCH_LOCK)
+        self.yaw_lock_commanded = bool(flags & FLAGS_YAW_LOCK)
+        self.get_logger().info(f"~~~~~~~Gimbal Flags~~~~~~~~\nRetract: {self.retract_commanded}\nNeutral: {self.neutral_position_commanded}\nRoll Lock: {self.roll_lock_commanded}\nPitch Lock: {self.pitch_lock_commanded}\nYaw Lock: {self.yaw_lock_commanded}")
 
     def update_alt(self, msg: Altitude):
         self.ALTITUDE=msg
@@ -233,6 +263,28 @@ class Vehicle(FrameMember):
         self.path.poses.append(path_update) # type: ignore
         self.path.header.stamp = path_update.header.stamp
 
+        # publish the reference frame for a gimbal
+        # construct the gimbal reference frame based on the active flags
+        R_body_ref = R.identity()
+        if self.roll_lock_commanded or self.pitch_lock_commanded or self.yaw_lock_commanded:
+            q = tf_out.rotation
+            R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
+            R_body_ref *= R_world_body.inv()
+            # if we don't have a yaw lock, re-insert the yaw of the drone
+            if not self.yaw_lock_commanded:
+                R_body_ref *= self.heading_only_frame(tf_out.rotation)
+        (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
+        q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)
+        # make and publish the transform
+        g_ref = TransformStamped()
+        g_ref.header = Header()
+        g_ref.header.frame_id = self.gimbal_offset_frame
+        g_ref.header.stamp = head_out.stamp
+        g_ref.child_frame_id = self.gimbal_ref_frame
+        g_ref.transform = Transform()
+        g_ref.transform.rotation = q_body_ref
+        self.tf_broadcaster.sendTransform(g_ref)
+
         # Publish altimeter plane viz. investigation only, not required
         if self.ALTITUDE:
             alt_t = Transform(translation=tf_out.translation)
@@ -246,7 +298,6 @@ class Vehicle(FrameMember):
                 child_frame_id=f"{self.FRAME_NAME}_alt_plane",
                 transform=alt_t
             ))
-
 
     def home_cb(self, msg: HomePosition):
         """
@@ -290,7 +341,6 @@ class Vehicle(FrameMember):
             longitude=lon_e,
             altitude=alt_e
         ))
-
 
     def publish_path(self):
         if self.path.poses:
@@ -340,6 +390,20 @@ class Vehicle(FrameMember):
             return Vector3(x=x_in, y=y_in, z=z_in)
         else:
             raise ValueError(f"Unable to determine the coordinate frame for message type: {self.POSE_FRAME}")
+
+    def heading_only_frame(self, o:Quaternion) -> R:
+        R_world_body = R.from_quat([o.x, o.y, o.z, o.w])
+        # find the +x axis of the body (apply the +x vector to the R_world_body frame)
+        heading_vector_enu = R_world_body.apply([1.0, 0.0, 0.0])
+        # get only the component of this vector in the XY world plane (remove the Z-component of a vector in ENU space)
+        heading_vector_enu[2] = 0.0
+        # check if the vehicle is pointing straight up or down (would have no measurable "heading")
+        norm = np.linalg.norm(heading_vector_enu)
+        if norm < 1e-9:
+            return R.identity()
+        heading_vector_enu = heading_vector_enu / norm
+        heading = np.arctan2(heading_vector_enu[1], heading_vector_enu[0])
+        return R.from_euler('Z', heading)
 
     def _format(self, tab_depth: int = 0) -> str:
         t1 = self._tab_char * tab_depth

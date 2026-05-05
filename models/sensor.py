@@ -108,7 +108,6 @@ class Sensor(FrameMember):
             # assumed no static rotational offset, for now. TODO
             pos_out = Vector3(x=self.OFFSET[0], y=self.OFFSET[1], z=self.OFFSET[2])
             tf_out = Transform(translation=pos_out)
-            static_frame_name = f"{self.FRAME_NAME}_mount"
 
             # build tf
             self.s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
@@ -266,50 +265,13 @@ class Gimbal(Sensor):
 
     def publish_orientation(self, msg : mavros_msgs.msg.GimbalDeviceAttitudeStatus):
         # NOTE: in mavros, GimbalDeviceAttitudeStatus message does NOT reflect commanded flags, only available flags. (confirmed)
-        # enu -> d4_base_link -> gimbal_mount -> gimbal_ref_frame -> gimbal_frame
+        # enu -> d4_base_link -> gimbal_offset -> gimbal_ref_frame -> gimbal_frame
 
-        # lookup the body transform from the tf tree
-        try:
-            body_t = self.tf_buffer.lookup_transform(
-                # TODO parameterize this
-                target_frame="d4_base_link",
-                source_frame="uas4_ekf_origin",
-                time=Time.from_msg(msg.header.stamp),
-                timeout=Duration(nanoseconds=500_000_000) # 0.5 sec timeout
-            )
-        except Exception as e:
-            self.get_logger().warn(f"TF lookup failed during gimbal ref frame construction: {e}")
-            return
-
-        self.body_orientation = body_t.transform.rotation
-
-        # construct the gimbal reference frame based on the active flags
-        R_body_ref = R.identity()
-
-        if self.roll_lock_commanded or self.pitch_lock_commanded or self.yaw_lock_commanded:
-            q = self.body_orientation
-            R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
-            R_body_ref *= R_world_body.inv()
-
-            if not self.yaw_lock_commanded:
-                R_body_ref *= self.heading_only_frame()
-
-        (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
-        q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)
-
-        # publish gimbal ref frame
-        '''
-        The ref frame is actually a "zeroed" reference frame for the gimbal based on the
-        position of the body at a given time. In order for this reference frame to be
-        consistent, it needs to be stamped with the timestamp of the body frame it is
-        relative to.(use body_t.header instead of msg.header)
-        '''
-        tf = TransformStamped(
-            header=Header(frame_id=self.PARENT_FRAME, stamp=body_t.header.stamp),
-            child_frame_id=self.GIMBAL_REF_FRAME_NAME,
-            transform=Transform(rotation=q_body_ref)
-        )
-        self.tf_broadcaster.sendTransform(tf)
+        # I am making the decision to remove the gimbal flag handling code from the gimbal
+        # class in favor of calculating the gimbal's "reference frame" during the vehicle
+        # frame calculations. For drones, the body pose tends to be updated at a much
+        # higher rate than the gimbal's pose, so the body should be responsible for
+        # maintaining any reference frames that later, lower-rate sensors use.
 
         # construct gimbal attitude frame
         R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
@@ -344,20 +306,6 @@ class Gimbal(Sensor):
         )
 
         self.tf_broadcaster.sendTransform(cmd_tf)
-
-    def heading_only_frame(self) -> R:
-        R_world_body = R.from_quat([self.body_orientation.x, self.body_orientation.y, self.body_orientation.z, self.body_orientation.w])
-        # find the +x axis of the body (apply the +x vector to the R_world_body frame)
-        heading_vector_enu = R_world_body.apply([1.0, 0.0, 0.0])
-        # get only the component of this vector in the XY world plane (remove the Z-component of a vector in ENU space)
-        heading_vector_enu[2] = 0.0
-        # check if the vehicle is pointing straight up or down (would have no measurable "heading")
-        norm = np.linalg.norm(heading_vector_enu)
-        if norm < 1e-9:
-            return R.identity()
-        heading_vector_enu = heading_vector_enu / norm
-        heading = np.arctan2(heading_vector_enu[1], heading_vector_enu[0])
-        return R.from_euler('Z', heading)
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
