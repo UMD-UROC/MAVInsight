@@ -1,8 +1,9 @@
 # python imports
 from __future__ import annotations
+
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 from typing import Optional
+from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 import mavros_msgs.msg
@@ -19,8 +20,8 @@ from tf2_geometry_msgs import do_transform_pose
 from tf2_ros import Buffer, TransformListener
 
 # MAVInsight imports
-from models.frame_utils import frd_2_flu, frd_ned_2_flu_enu
 from models.frame_member import FrameMember
+from models.frame_utils import frd_2_flu, frd_ned_2_flu_enu
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
@@ -258,7 +259,7 @@ class Gimbal(Sensor):
         MUCH bigger problems lol. It IS possible that tfs could time out under heavy cpu
         load, though... will need testing/experiment
         '''
-        self.tf_buffer = Buffer(cache_time=Duration(seconds=3))
+        self.tf_buffer = Buffer(Duration(seconds=5))
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Gimbal initialized!")
@@ -271,10 +272,10 @@ class Gimbal(Sensor):
         try:
             body_t = self.tf_buffer.lookup_transform(
                 # TODO parameterize this
-                "uas4_ekf_origin",
-                "d4_base_link",
-                Time.from_msg(msg.header.stamp),
-                Duration(nanoseconds=0.5e9) # type: ignore
+                target_frame="d4_base_link",
+                source_frame="uas4_ekf_origin",
+                time=Time.from_msg(msg.header.stamp),
+                timeout=Duration(nanoseconds=500_000_000) # 0.5 sec timeout
             )
         except Exception as e:
             self.get_logger().warn(f"TF lookup failed during gimbal ref frame construction: {e}")
