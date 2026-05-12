@@ -21,7 +21,7 @@ from tf2_ros import Buffer, TransformListener
 
 # MAVInsight imports
 from models.frame_member import FrameMember
-from models.frame_utils import frd_2_flu, frd_ned_2_flu_enu
+from models.frame_utils import euler_2_quat, frd_2_flu, frd_ned_2_flu_enu
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
@@ -72,15 +72,21 @@ class Sensor(FrameMember):
                     f"Error: {e}"
                 )
 
-            if len(self.OFFSET) != 3:
+            if sum(self.OFFSET) == 0.0:
+                self.OFFSET = []
+            elif len(self.OFFSET) == 3:
+                # append empty RPY values
+                self.OFFSET.append(0.0)
+                self.OFFSET.append(0.0)
+                self.OFFSET.append(0.0)
+            elif len(self.OFFSET) == 6:
+                pass
+            else:
                 self.OFFSET = []
                 self.get_logger().error(
-                    f"Offset param must be exactly 3 elements long. Using no-offset default.\n" +
+                    f"Offset param must be exactly 3 or 6 elements long (x,y,z or x,y,z,r,p,yaw). Using no-offset default.\n" +
                     f"Received: {offset_param_val}"
                 )
-            else:
-                if sum(self.OFFSET) == 0.0:
-                    self.OFFSET = []
         else:
             self.default_parameter_warning("offset")
             self.OFFSET = []
@@ -97,17 +103,18 @@ class Sensor(FrameMember):
             self.SENSORS = []
 
         # broadcast the static transform of an offset, if one is present
-        if len(self.OFFSET) == 3:
+        if len(self.OFFSET) == 6:
             static_frame_name = f"{self.FRAME_NAME}_offset"
-            self.get_logger().info(f"Received valid [x,y,z] sensor offset: {self.OFFSET}m. Building new static TF with child frame: {static_frame_name}")
+            self.get_logger().info(f"Received valid [x,y,z,r,p,yaw] sensor offset: {self.OFFSET}m. Building new static TF with child frame: {static_frame_name}")
 
             # header
             head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
 
             # transform
-            # assumed no static rotational offset, for now. TODO
             pos_out = Vector3(x=self.OFFSET[0], y=self.OFFSET[1], z=self.OFFSET[2])
-            tf_out = Transform(translation=pos_out)
+            rot_out = euler_2_quat(self.OFFSET[3], self.OFFSET[4], self.OFFSET[5])
+
+            tf_out = Transform(translation=pos_out, rotation=rot_out)
 
             # build tf
             self.s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)

@@ -7,7 +7,7 @@ from scipy.spatial.transform import Rotation as R
 # ROS2 message imports
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
 from mavros_msgs.msg import Altitude, HomePosition, GimbalManagerSetAttitude
-from nav_msgs.msg import Path
+# from nav_msgs.msg import Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
@@ -95,10 +95,10 @@ class Vehicle(FrameMember):
             self.default_parameter_warning("home_fix_topic")
             home_fix_topic = "/home_position/fix"
 
-        if self.has_parameter("home_frame_topic"):
-            self.HOME_FRAME = self.get_parameter("home_frame_topic").get_parameter_value().string_value
+        if self.has_parameter("home_frame_name"):
+            self.HOME_FRAME = self.get_parameter("home_frame_name").get_parameter_value().string_value
         else:
-            self.default_parameter_warning("home_frame_topic")
+            self.default_parameter_warning("home_frame_name")
             self.HOME_FRAME = "home_position"
 
         # Location Topic
@@ -147,14 +147,14 @@ class Vehicle(FrameMember):
         self.VELOCITY = None
 
         # Initialize publishers
-        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
+        #self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, reliable_qos)
         self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
         self.velocity_vector_pub = self.create_publisher(Marker, f"{namespace}velocityVector", reliable_qos)
 
         # Internal storage for path visualizer
-        self.path = Path()
-        self.path.header.frame_id = self.PARENT_FRAME
+        #self.path = Path()
+        #self.path.header.frame_id = self.PARENT_FRAME
         self.latest_pose = None
 
         # Initialize state variables for velocity and position tracking
@@ -176,19 +176,26 @@ class Vehicle(FrameMember):
         self.yaw_lock_commanded = False
 
         # Publisher timers
-        self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
+        #self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
     def update_gimbal_flags(self, msg:GimbalManagerSetAttitude):
         flags = int(msg.flags)
+        new_flag = False
+        new_flag |= (self.retract_commanded ^ bool(flags & FLAGS_RETRACT))
+        new_flag |= (self.neutral_position_commanded ^ bool(flags & FLAGS_NEUTRAL))
+        new_flag |= (self.roll_lock_commanded ^ bool(flags & FLAGS_ROLL_LOCK))
+        new_flag |= (self.pitch_lock_commanded ^ bool(flags & FLAGS_PITCH_LOCK))
+        new_flag |= (self.yaw_lock_commanded ^ bool(flags & FLAGS_YAW_LOCK))
         self.retract_commanded = bool(flags & FLAGS_RETRACT)
         self.neutral_position_commanded = bool(flags & FLAGS_NEUTRAL)
         self.roll_lock_commanded = bool(flags & FLAGS_ROLL_LOCK)
         self.pitch_lock_commanded = bool(flags & FLAGS_PITCH_LOCK)
         self.yaw_lock_commanded = bool(flags & FLAGS_YAW_LOCK)
-        self.get_logger().info(f"~~~~~~~Gimbal Flags~~~~~~~~\nRetract: {self.retract_commanded}\nNeutral: {self.neutral_position_commanded}\nRoll Lock: {self.roll_lock_commanded}\nPitch Lock: {self.pitch_lock_commanded}\nYaw Lock: {self.yaw_lock_commanded}")
+        if new_flag:
+            self.get_logger().info(f"~~~~~~~NEW Gimbal Flags~~~~~~~~\nRetract: {self.retract_commanded}\nNeutral: {self.neutral_position_commanded}\nRoll Lock: {self.roll_lock_commanded}\nPitch Lock: {self.pitch_lock_commanded}\nYaw Lock: {self.yaw_lock_commanded}")
 
     def update_alt(self, msg: Altitude):
         self.ALTITUDE=msg
@@ -201,7 +208,7 @@ class Vehicle(FrameMember):
         # TODO: double check time sync between message schemas
         head_out = Header(frame_id=self.PARENT_FRAME)
 
-        path_update = PoseStamped()
+        #path_update = PoseStamped()
 
         # transform
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
@@ -215,10 +222,10 @@ class Vehicle(FrameMember):
             q_out_flu = frd_ned_2_flu_enu(q_out_frd)
             tf_out = Transform(translation=pos_out, rotation=q_out_flu)
 
-            path_update.pose.position.x = pos_out.x
-            path_update.pose.position.y = pos_out.y
-            path_update.pose.position.z = pos_out.z
-            path_update.pose.orientation = q_out_flu
+            # path_update.pose.position.x = pos_out.x
+            # path_update.pose.position.y = pos_out.y
+            # path_update.pose.position.z = pos_out.z
+            # path_update.pose.orientation = q_out_flu
 
             # TODO: Migrate to new function
             vel_in = msg.velocity
@@ -234,10 +241,10 @@ class Vehicle(FrameMember):
             pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
             tf_out = Transform(translation=pos_out, rotation=msg.pose.orientation)
 
-            path_update.pose.position.x = float(pos_in.x)
-            path_update.pose.position.y = float(pos_in.y)
-            path_update.pose.position.z = float(pos_in.z)
-            path_update.pose.orientation = msg.pose.orientation
+            # path_update.pose.position.x = float(pos_in.x)
+            # path_update.pose.position.y = float(pos_in.y)
+            # path_update.pose.position.z = float(pos_in.z)
+            # path_update.pose.orientation = msg.pose.orientation
 
             # Extract velocity from Odometry message
             if self.VELOCITY:
@@ -246,7 +253,7 @@ class Vehicle(FrameMember):
 
             self.drone_pos = [float(pos_in.x), float(pos_in.y), float(pos_in.z)]
 
-        path_update.header = head_out
+        # path_update.header = head_out
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -260,8 +267,8 @@ class Vehicle(FrameMember):
 
         # build PoseStamped for path
         # Path update
-        self.path.poses.append(path_update) # type: ignore
-        self.path.header.stamp = path_update.header.stamp
+        # self.path.poses.append(path_update) # type: ignore
+        # self.path.header.stamp = path_update.header.stamp
 
         # publish the reference frame for a gimbal
         # construct the gimbal reference frame based on the active flags
@@ -342,9 +349,9 @@ class Vehicle(FrameMember):
             altitude=alt_e
         ))
 
-    def publish_path(self):
-        if self.path.poses:
-            self.path_pub.publish(self.path)
+    # def publish_path(self):
+    #     if self.path.poses:
+    #         self.path_pub.publish(self.path)
 
     def publish_velocity_vector(self):
         # Don't publish until we've received at least one position update

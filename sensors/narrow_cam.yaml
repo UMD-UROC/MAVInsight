@@ -8,6 +8,9 @@
         - 0.0
         - 0.0
         - 0.0
+        - -1.5
+        - -2.0
+        - 0.0
       cam_info_topic: /uas4/camera/camera_info
       parent_frame: d4_gimbal_frame
       sensor_type: camera

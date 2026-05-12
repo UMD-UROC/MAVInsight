@@ -67,3 +67,8 @@ def enu_2_lla(ref: NavSatFix, e, n, u):
         e=e, n=n, u=u,
         lat0=ref.latitude, lon0=ref.longitude, h0=ref.altitude
     )
+
+def euler_2_quat(x:float, y:float, z:float, deg:bool=True):
+    R_in = R.from_euler('xyz', [x, y, z], degrees=deg)
+    r_x, r_y, r_z, r_w = R_in.as_quat()
+    return Quaternion(x=r_x, y=r_y, z=r_z, w=r_w)
