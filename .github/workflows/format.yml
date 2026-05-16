@@ -1,4 +1,4 @@
-name: Format
+name: autofix.ci
 
 on:
   pull_request:
