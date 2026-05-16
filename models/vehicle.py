@@ -142,9 +142,7 @@ class Vehicle(FrameMember):
         # Position tolerance for path de-duplication
         if self.has_parameter("position_tolerance"):
             self.POSITION_TOLERANCE = float(
-                self.get_parameter("position_tolerance")
-                .get_parameter_value()
-                .double_value
+                self.get_parameter("position_tolerance").value
             )
         else:
             self.default_parameter_warning("position_tolerance")
@@ -210,7 +208,9 @@ class Vehicle(FrameMember):
     def publish_position(self, msg: PoseStamped | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas
-        head_out = Header(frame_id=self.PARENT_FRAME)
+        head_out = Header(
+            stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME
+        )
 
         path_update = PoseStamped()
 
@@ -267,6 +267,7 @@ class Vehicle(FrameMember):
             self.drone_pos = list(new_pos)
 
         path_update.header = head_out
+        self.path.header.stamp = path_update.header.stamp
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -284,7 +285,6 @@ class Vehicle(FrameMember):
             self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
         ):
             self.path.poses.append(path_update)  # type: ignore
-            self.path.header.stamp = path_update.header.stamp
             self.last_drone_pos = new_pos
 
         # Publish altimeter plane
