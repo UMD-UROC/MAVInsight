@@ -1,11 +1,11 @@
 # python imports
 import math
-from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
-from cdcl_umd_msgs.msg import TargetBoxArray, TargetBox
+from cdcl_umd_msgs.msg import TargetBox, TargetBoxArray
 from foxglove_msgs.msg import ImageAnnotations, Point2, PointsAnnotation, TextAnnotation
 from geometry_msgs.msg import Point, Pose, Quaternion, Vector3
+from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Image, NavSatFix
 from std_msgs.msg import ColorRGBA, Header
 from vision_msgs.msg import BoundingBox2D
@@ -14,45 +14,61 @@ from visualization_msgs.msg import Marker, MarkerArray
 # MAVInsight imports
 from models.frame_utils import frd_2_flu, lla_2_enu
 from models.graph_member import GraphMember
-from models.qos_profiles import viz_qos, reliable_qos
+from models.qos_profiles import reliable_qos, viz_qos
+
 
 class TBA_Viz(GraphMember):
-
     def __init__(self):
         super().__init__()
         self.LOCAL_FIX = None
 
-        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Localization params....")
+        self.get_logger().info(f'[{self.DISPLAY_NAME}]: Ingesting Localization params....')
 
         if self.has_parameter('localization_topic'):
             loc_topic = self.get_parameter('localization_topic').get_parameter_value().string_value
         else:
-            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} localization topic param not set. Unable to initialize localization vizualization.")
+            raise RuntimeError(
+                f'Localization viz node: {self.DISPLAY_NAME} localization topic param not set. Unable to initialize localization vizualization.'
+            )
 
         if self.has_parameter('loc_viz_topic_latest'):
-            loc_viz_topic_latest = self.get_parameter('loc_viz_topic_latest').get_parameter_value().string_value
+            loc_viz_topic_latest = (
+                self.get_parameter('loc_viz_topic_latest').get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning('loc_viz_topic_latest')
             loc_viz_topic_latest = '/viz/tbas/latest'
 
         if self.has_parameter('loc_viz_topic_previous'):
-            loc_viz_topic_previous = self.get_parameter('loc_viz_topic_previous').get_parameter_value().string_value
+            loc_viz_topic_previous = (
+                self.get_parameter('loc_viz_topic_previous').get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning('loc_viz_topic_previous')
             loc_viz_topic_previous = '/viz/tbas/previous'
 
         if self.has_parameter('localization_frame'):
-            self.LOC_FRAME = self.get_parameter('localization_frame').get_parameter_value().string_value
+            self.LOC_FRAME = (
+                self.get_parameter('localization_frame').get_parameter_value().string_value
+            )
         else:
-            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} localization frame param not set. Unable to initialize localization vizualization.")
+            raise RuntimeError(
+                f'Localization viz node: {self.DISPLAY_NAME} localization frame param not set. Unable to initialize localization vizualization.'
+            )
 
         if self.has_parameter('local_fix_topic'):
-            local_fix_topic = self.get_parameter('local_fix_topic').get_parameter_value().string_value
+            local_fix_topic = (
+                self.get_parameter('local_fix_topic').get_parameter_value().string_value
+            )
         else:
-            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} local fix topic param not set. Unable to initialize localization vizualization.")
+            raise RuntimeError(
+                f'Localization viz node: {self.DISPLAY_NAME} local fix topic param not set. Unable to initialize localization vizualization.'
+            )
 
         if self.has_parameter('target_image_topic'):
-            image_topic = self.get_parameter('target_image_topic').get_parameter_value().string_value
+            image_topic = (
+                self.get_parameter('target_image_topic').get_parameter_value().string_value
+            )
         else:
             self.default_parameter_warning('target_image_topic')
             image_topic = 'loczn_img'
@@ -63,9 +79,11 @@ class TBA_Viz(GraphMember):
             self.default_parameter_warning('bbox_topic')
             bbox_topic = 'bboxes'
 
-        if self.has_parameter("mesh_resource_path"):
-            self.mesh_resource_path = self.get_parameter("mesh_resource_path").get_parameter_value().string_value
-            self.get_logger().info(f"Mesh Resource Path detected: {self.mesh_resource_path}")
+        if self.has_parameter('mesh_resource_path'):
+            self.mesh_resource_path = (
+                self.get_parameter('mesh_resource_path').get_parameter_value().string_value
+            )
+            self.get_logger().info(f'Mesh Resource Path detected: {self.mesh_resource_path}')
         else:
             self.mesh_resource_path = None
 
@@ -77,13 +95,13 @@ class TBA_Viz(GraphMember):
         self.bbox_pub = self.create_publisher(ImageAnnotations, bbox_topic, reliable_qos)
 
         self.i = 0
-        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Localization Visualization initialized!")
+        self.get_logger().info(f'[{self.DISPLAY_NAME}]: Localization Visualization initialized!')
 
     def update_local_fix(self, msg: NavSatFix):
         self.LOCAL_FIX = msg
 
     def loc_cb(self, msg: TargetBoxArray):
-        self.get_logger().debug("tba received")
+        self.get_logger().debug('tba received')
 
         self.loczn_img_pub.publish(msg.source_img)
 
@@ -91,24 +109,24 @@ class TBA_Viz(GraphMember):
 
         drone_pose = msg.uav_local_pose.pose.pose
         drone_marker = Marker()
-        drone_marker.header=Header(frame_id=self.LOC_FRAME)
-        drone_marker.ns="drone"
-        drone_marker.id=0
-        drone_marker.pose.position.x=drone_pose.position.x
-        drone_marker.pose.position.y=drone_pose.position.y
-        drone_marker.pose.position.z=drone_pose.position.z
-        drone_marker.pose.orientation.x=drone_pose.orientation.x
-        drone_marker.pose.orientation.y=drone_pose.orientation.y
-        drone_marker.pose.orientation.z=drone_pose.orientation.z
-        drone_marker.pose.orientation.w=drone_pose.orientation.w
-        drone_marker.type=Marker.MESH_RESOURCE
-        drone_marker.mesh_resource=self.mesh_resource_path
-        drone_marker.mesh_use_embedded_materials=True
-        drone_marker.action=Marker.ADD
-        drone_marker.scale=Vector3(x=0.001, y=0.001, z=0.001)
-        drone_marker.color=ColorRGBA(r=153.0/255.0, g=153.0/255.0, b=153.0/255.0, a=0.9)
+        drone_marker.header = Header(frame_id=self.LOC_FRAME)
+        drone_marker.ns = 'drone'
+        drone_marker.id = 0
+        drone_marker.pose.position.x = drone_pose.position.x
+        drone_marker.pose.position.y = drone_pose.position.y
+        drone_marker.pose.position.z = drone_pose.position.z
+        drone_marker.pose.orientation.x = drone_pose.orientation.x
+        drone_marker.pose.orientation.y = drone_pose.orientation.y
+        drone_marker.pose.orientation.z = drone_pose.orientation.z
+        drone_marker.pose.orientation.w = drone_pose.orientation.w
+        drone_marker.type = Marker.MESH_RESOURCE
+        drone_marker.mesh_resource = self.mesh_resource_path
+        drone_marker.mesh_use_embedded_materials = True
+        drone_marker.action = Marker.ADD
+        drone_marker.scale = Vector3(x=0.001, y=0.001, z=0.001)
+        drone_marker.color = ColorRGBA(r=153.0 / 255.0, g=153.0 / 255.0, b=153.0 / 255.0, a=0.9)
 
-        R_fix = R.from_euler('xyz', [0.0, 0.0, -math.pi/2], degrees=False)
+        R_fix = R.from_euler('xyz', [0.0, 0.0, -math.pi / 2], degrees=False)
         q = drone_marker.pose.orientation
         R_drone = R.from_quat([q.x, q.y, q.z, q.w])
 
@@ -120,12 +138,12 @@ class TBA_Viz(GraphMember):
 
         drone_q = drone_pose.orientation
         drone_r = R.from_quat([drone_q.x, drone_q.y, drone_q.z, drone_q.w])
-        (dr_x, dr_y, dr_z) = drone_r.as_euler("xyz", degrees=True)
+        (dr_x, dr_y, dr_z) = drone_r.as_euler('xyz', degrees=True)
 
         gimbal_q_frd = msg.gimbal_attitude_quaternion
         gimbal_r_frd = R.from_quat([gimbal_q_frd.x, gimbal_q_frd.y, gimbal_q_frd.z, gimbal_q_frd.w])
         gimbal_r_enu = frd_2_flu(gimbal_r_frd)
-        assert(isinstance(gimbal_r_enu, R))
+        assert isinstance(gimbal_r_enu, R)
         (gr_x, gr_y, gr_z) = gimbal_r_enu.as_euler('xyz', degrees=True)
 
         R_world_gimbal = R.from_euler('yz', [float(gr_y), float(dr_z)], degrees=True)
@@ -133,16 +151,13 @@ class TBA_Viz(GraphMember):
 
         rangefinder_marker = Marker(
             header=Header(frame_id=self.LOC_FRAME),
-            ns="rangefinder",
+            ns='rangefinder',
             id=0,
             type=Marker.ARROW,
             action=Marker.ADD,
-            pose = Pose(
-                position=drone_pose.position,
-                orientation=Quaternion(x=x, y=y, z=z, w=w)
-            ),
+            pose=Pose(position=drone_pose.position, orientation=Quaternion(x=x, y=y, z=z, w=w)),
             scale=Vector3(x=msg.rangefinder_dist.range, y=0.1, z=0.1),
-            color=ColorRGBA(r=86.0/255.0, g=209.0/255.0, b=86.0/255.0, a=0.75)
+            color=ColorRGBA(r=86.0 / 255.0, g=209.0 / 255.0, b=86.0 / 255.0, a=0.75),
         )
 
         markers = [drone_marker, rangefinder_marker]
@@ -153,7 +168,7 @@ class TBA_Viz(GraphMember):
             altimeter_plane_fixes = []
 
             for box in msg.uav_target_boxes:
-                assert(isinstance(box, TargetBox))
+                assert isinstance(box, TargetBox)
                 if box.target_location_altimeter_plane:
                     loc: NavSatFix = box.target_location_altimeter_plane
                     altimeter_plane_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
@@ -170,62 +185,72 @@ class TBA_Viz(GraphMember):
             gimbal_plane_points = [Point(x=e, y=n, z=u) for e, n, u in gimbal_plane_fixes]
             altimeter_plane_points = [Point(x=e, y=n, z=u) for e, n, u in altimeter_plane_fixes]
 
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="range_last",
-                id=0,
-                type=Marker.SPHERE_LIST,
-                action=Marker.ADD,
-                points=rangefinder_points,
-                scale=Vector3(x=0.25, y=0.25, z=0.25),
-                color=ColorRGBA(r=255.0/255.0, g=0.0/255.0, b=0.0/255.0, a=0.75)
-            ))
+            markers.append(
+                Marker(
+                    header=Header(frame_id=self.LOC_FRAME),
+                    ns='range_last',
+                    id=0,
+                    type=Marker.SPHERE_LIST,
+                    action=Marker.ADD,
+                    points=rangefinder_points,
+                    scale=Vector3(x=0.25, y=0.25, z=0.25),
+                    color=ColorRGBA(r=255.0 / 255.0, g=0.0 / 255.0, b=0.0 / 255.0, a=0.75),
+                )
+            )
 
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="gimb_plane_last",
-                id=0,
-                type=Marker.SPHERE_LIST,
-                action=Marker.ADD,
-                points=gimbal_plane_points,
-                scale=Vector3(x=0.25, y=0.25, z=0.25),
-                color=ColorRGBA(r=0.0/255.0, g=255.0/255.0, b=0.0/255.0, a=0.75)
-            ))
+            markers.append(
+                Marker(
+                    header=Header(frame_id=self.LOC_FRAME),
+                    ns='gimb_plane_last',
+                    id=0,
+                    type=Marker.SPHERE_LIST,
+                    action=Marker.ADD,
+                    points=gimbal_plane_points,
+                    scale=Vector3(x=0.25, y=0.25, z=0.25),
+                    color=ColorRGBA(r=0.0 / 255.0, g=255.0 / 255.0, b=0.0 / 255.0, a=0.75),
+                )
+            )
 
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="alt_plane_last",
-                id=0,
-                type=Marker.SPHERE_LIST,
-                action=Marker.ADD,
-                points=altimeter_plane_points,
-                scale=Vector3(x=0.25, y=0.25, z=0.25),
-                color=ColorRGBA(r=0.0/255.0, g=0.0/255.0, b=255.0/255.0, a=0.75)
-            ))
+            markers.append(
+                Marker(
+                    header=Header(frame_id=self.LOC_FRAME),
+                    ns='alt_plane_last',
+                    id=0,
+                    type=Marker.SPHERE_LIST,
+                    action=Marker.ADD,
+                    points=altimeter_plane_points,
+                    scale=Vector3(x=0.25, y=0.25, z=0.25),
+                    color=ColorRGBA(r=0.0 / 255.0, g=0.0 / 255.0, b=255.0 / 255.0, a=0.75),
+                )
+            )
 
             altimeter_beam_points = []
-            drone_point = Point(x=drone_pose.position.x, y=drone_pose.position.y, z=drone_pose.position.z)
+            drone_point = Point(
+                x=drone_pose.position.x, y=drone_pose.position.y, z=drone_pose.position.z
+            )
             for p in altimeter_plane_points:
                 altimeter_beam_points.append(drone_point)
                 altimeter_beam_points.append(p)
 
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="alt_beams_last",
-                id=0,
-                type=Marker.LINE_LIST,
-                action=Marker.ADD,
-                points=altimeter_beam_points,
-                scale=Vector3(x=0.05, y=0.05, z=0.05),
-                color=ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
-            ))
+            markers.append(
+                Marker(
+                    header=Header(frame_id=self.LOC_FRAME),
+                    ns='alt_beams_last',
+                    id=0,
+                    type=Marker.LINE_LIST,
+                    action=Marker.ADD,
+                    points=altimeter_beam_points,
+                    scale=Vector3(x=0.05, y=0.05, z=0.05),
+                    color=ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0),
+                )
+            )
 
         self.latest_pub.publish(MarkerArray(markers=markers))
 
         [latest_to_previous(m, self.i) for m in markers]
         self.previous_pub.publish(MarkerArray(markers=markers))
 
-        self.i+=1
+        self.i += 1
 
     def generage_bboxes(self, msg: TargetBoxArray):
         out = ImageAnnotations()
@@ -233,7 +258,7 @@ class TBA_Viz(GraphMember):
         out.texts = []
 
         for i, tb in enumerate(msg.uav_target_boxes):
-            assert(isinstance(tb, TargetBox))
+            assert isinstance(tb, TargetBox)
             ann = PointsAnnotation()
             ann.timestamp = msg.header.stamp
             ann.type = PointsAnnotation.LINE_LOOP
@@ -248,7 +273,7 @@ class TBA_Viz(GraphMember):
             ann.fill_color.b = 0.0
             ann.fill_color.a = 0.12
 
-            box:BoundingBox2D = tb.target_bbox
+            box: BoundingBox2D = tb.target_bbox
             cx = box.center.position.x
             cy = box.center.position.y
             th = box.center.theta
@@ -262,14 +287,16 @@ class TBA_Viz(GraphMember):
                 (cx - hx, cy - hy),
                 (cx + hx, cy - hy),
                 (cx + hx, cy + hy),
-                (cx - hx, cy + hy)
+                (cx - hx, cy + hy),
             ]
 
             ann.points = []
             for x, y in points:
                 dx = x - cx
                 dy = y - cy
-                ann.points.append(Point2(x=float(cx + ct*dx - st*dy), y=float(cy + st*dx + ct*dy)))
+                ann.points.append(
+                    Point2(x=float(cx + ct * dx - st * dy), y=float(cy + st * dx + ct * dy))
+                )
 
             out.points.append(ann)
 
@@ -291,7 +318,8 @@ class TBA_Viz(GraphMember):
 
         self.bbox_pub.publish(out)
 
-def latest_to_previous(input:Marker, i: int):
+
+def latest_to_previous(input: Marker, i: int):
     input.id = i
-    input.ns = input.ns.replace("last", "all")
+    input.ns = input.ns.replace('last', 'all')
     return input

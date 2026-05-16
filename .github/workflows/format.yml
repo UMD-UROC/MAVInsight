@@ -1,0 +1,44 @@
+name: Format
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ruff:
+    name: Ruff format
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install formatter
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Format Python
+        if: github.event_name == 'pull_request'
+        run: ./scripts/format
+
+      - name: Check Python formatting
+        if: github.event_name != 'pull_request'
+        run: ./scripts/check-format
+
+      - name: Commit formatting fixes
+        if: github.event_name == 'pull_request'
+        uses: autofix-ci/action@v1
