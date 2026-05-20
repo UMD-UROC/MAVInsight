@@ -1,0 +1,21 @@
+/**/*:
+  uroc_standard_rois:
+    ros__parameters:
+      name: uroc_standard_rois
+      display_name: UROC | Standard ROIs
+      executable: site
+      geofence_topic: /geofence
+      ground_truth_topic: /ground_truths
+      map_ref_topic: /map_ref
+      map_ref: [38.3133181, -76.5521264, 7.482042857554134]
+      geofence: [
+        38.31349366632114, -76.5523951639618,
+        38.31342835176085, -76.55201498311652,
+        38.31323451463675, -76.5520740583758,
+        38.313309661707315, -76.55245423923637
+      ]
+      ground_truths: [
+        38.3133812, -76.5523614,
+        38.313367, -76.552283,
+        38.3133022, -76.5522117,
+      ]
