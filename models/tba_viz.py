@@ -20,7 +20,6 @@ class TBA_Viz(GraphMember):
 
     def __init__(self):
         super().__init__()
-        self.LOCAL_FIX = None
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Localization params....")
 
@@ -46,48 +45,32 @@ class TBA_Viz(GraphMember):
         else:
             raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} localization frame param not set. Unable to initialize localization vizualization.")
 
-        if self.has_parameter('local_fix_topic'):
-            local_fix_topic = self.get_parameter('local_fix_topic').get_parameter_value().string_value
-        else:
-            raise RuntimeError(f"Localization viz node: {self.DISPLAY_NAME} local fix topic param not set. Unable to initialize localization vizualization.")
-
-        if self.has_parameter('target_image_topic'):
-            image_topic = self.get_parameter('target_image_topic').get_parameter_value().string_value
-        else:
-            self.default_parameter_warning('target_image_topic')
-            image_topic = 'loczn_img'
-
-        if self.has_parameter('bbox_topic'):
-            bbox_topic = self.get_parameter('bbox_topic').get_parameter_value().string_value
-        else:
-            self.default_parameter_warning('bbox_topic')
-            bbox_topic = 'bboxes'
-
         if self.has_parameter("mesh_resource_path"):
             self.mesh_resource_path = self.get_parameter("mesh_resource_path").get_parameter_value().string_value
             self.get_logger().info(f"Mesh Resource Path detected: {self.mesh_resource_path}")
         else:
             self.mesh_resource_path = None
 
-        self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, viz_qos)
-        self.create_subscription(NavSatFix, local_fix_topic, self.update_local_fix, viz_qos)
+        # marker color
+        r, g, b, a = self.get_parameter('marker_color_rgba').get_parameter_value().double_array_value
+        self.color_profile = ColorRGBA(r=(r/255.0), g=(g/255.0), b=(b/255.0), a=a)
+        self.create_subscription(TargetBoxArray, loc_topic, self.loc_cb, reliable_qos)
         self.latest_pub = self.create_publisher(MarkerArray, loc_viz_topic_latest, reliable_qos)
         self.previous_pub = self.create_publisher(MarkerArray, loc_viz_topic_previous, reliable_qos)
-        self.loczn_img_pub = self.create_publisher(Image, image_topic, reliable_qos)
-        self.bbox_pub = self.create_publisher(ImageAnnotations, bbox_topic, reliable_qos)
 
         self.i = 0
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Localization Visualization initialized!")
 
-    def update_local_fix(self, msg: NavSatFix):
-        self.LOCAL_FIX = msg
-
     def loc_cb(self, msg: TargetBoxArray):
-        self.get_logger().debug("tba received")
+        self.get_logger().info("tba received")
 
-        self.loczn_img_pub.publish(msg.source_img)
+        if msg.source_img.header.stamp.sec == 0:
+            self.get_logger().error("AAAAA")
+            return
 
-        self.generage_bboxes(msg)
+        if msg.uav_target_boxes == None or len(msg.uav_target_boxes) == 0:
+            self.get_logger().error("AAAAA2")
+            return
 
         drone_pose = msg.uav_local_pose.pose.pose
         drone_marker = Marker()
@@ -106,7 +89,7 @@ class TBA_Viz(GraphMember):
         drone_marker.mesh_use_embedded_materials=True
         drone_marker.action=Marker.ADD
         drone_marker.scale=Vector3(x=0.001, y=0.001, z=0.001)
-        drone_marker.color=ColorRGBA(r=153.0/255.0, g=153.0/255.0, b=153.0/255.0, a=0.9)
+        drone_marker.color=self.color_profile
 
         R_fix = R.from_euler('xyz', [0.0, 0.0, -math.pi/2], degrees=False)
         q = drone_marker.pose.orientation
@@ -142,154 +125,63 @@ class TBA_Viz(GraphMember):
                 orientation=Quaternion(x=x, y=y, z=z, w=w)
             ),
             scale=Vector3(x=msg.rangefinder_dist.range, y=0.1, z=0.1),
-            color=ColorRGBA(r=86.0/255.0, g=209.0/255.0, b=86.0/255.0, a=0.75)
+            color=self.color_profile
         )
 
         markers = [drone_marker, rangefinder_marker]
 
-        if self.LOCAL_FIX:
-            rangefinder_fixes = []
-            gimbal_plane_fixes = []
-            altimeter_plane_fixes = []
+        rangefinder_fixes = []
+        gimbal_plane_fixes = []
+        altimeter_plane_fixes = []
 
-            for box in msg.uav_target_boxes:
-                assert(isinstance(box, TargetBox))
-                if box.target_location_altimeter_plane:
-                    loc: NavSatFix = box.target_location_altimeter_plane
-                    altimeter_plane_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
+        for box in msg.uav_target_boxes:
+            assert(isinstance(box, TargetBox))
+            if box.target_location_altimeter_plane:
+                loc: NavSatFix = box.target_location_altimeter_plane
+                e, n, u = lla_2_enu(msg.uav_gps_location, loc, ignore_alt=False)
+                e += msg.uav_local_pose.pose.pose.position.x
+                n += msg.uav_local_pose.pose.pose.position.y
+                u += msg.uav_local_pose.pose.pose.position.z
+                altimeter_plane_fixes.append((e, n, u))
 
-                if box.target_location_gimbal_plane:
-                    loc: NavSatFix = box.target_location_gimbal_plane
-                    gimbal_plane_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
+            if box.target_location_gimbal_plane:
+                loc: NavSatFix = box.target_location_gimbal_plane
+                e, n, u = lla_2_enu(msg.uav_gps_location, loc)
+                e += msg.uav_local_pose.pose.pose.position.x
+                n += msg.uav_local_pose.pose.pose.position.y
+                u += msg.uav_local_pose.pose.pose.position.z
+                gimbal_plane_fixes.append((e, n, u))
 
-                if box.target_location_rangefinder:
-                    loc: NavSatFix = box.target_location_rangefinder
-                    rangefinder_fixes.append(lla_2_enu(self.LOCAL_FIX, loc))
+            if box.target_location_rangefinder:
+                loc: NavSatFix = box.target_location_rangefinder
+                e, n, u = lla_2_enu(msg.uav_gps_location, loc)
+                e += msg.uav_local_pose.pose.pose.position.x
+                n += msg.uav_local_pose.pose.pose.position.y
+                u += msg.uav_local_pose.pose.pose.position.z
+                rangefinder_fixes.append((e, n, u))
 
-            rangefinder_points = [Point(x=e, y=n, z=u) for e, n, u in rangefinder_fixes]
-            gimbal_plane_points = [Point(x=e, y=n, z=u) for e, n, u in gimbal_plane_fixes]
-            altimeter_plane_points = [Point(x=e, y=n, z=u) for e, n, u in altimeter_plane_fixes]
+        rangefinder_points = [Point(x=e, y=n, z=u) for e, n, u in rangefinder_fixes]
+        gimbal_plane_points = [Point(x=e, y=n, z=u) for e, n, u in gimbal_plane_fixes]
+        altimeter_plane_points = [Point(x=e, y=n, z=u) for e, n, u in altimeter_plane_fixes]
 
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="range_last",
-                id=0,
-                type=Marker.SPHERE_LIST,
-                action=Marker.ADD,
-                points=rangefinder_points,
-                scale=Vector3(x=0.25, y=0.25, z=0.25),
-                color=ColorRGBA(r=255.0/255.0, g=0.0/255.0, b=0.0/255.0, a=0.75)
-            ))
-
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="gimb_plane_last",
-                id=0,
-                type=Marker.SPHERE_LIST,
-                action=Marker.ADD,
-                points=gimbal_plane_points,
-                scale=Vector3(x=0.25, y=0.25, z=0.25),
-                color=ColorRGBA(r=0.0/255.0, g=255.0/255.0, b=0.0/255.0, a=0.75)
-            ))
-
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="alt_plane_last",
-                id=0,
-                type=Marker.SPHERE_LIST,
-                action=Marker.ADD,
-                points=altimeter_plane_points,
-                scale=Vector3(x=0.25, y=0.25, z=0.25),
-                color=ColorRGBA(r=0.0/255.0, g=0.0/255.0, b=255.0/255.0, a=0.75)
-            ))
-
-            altimeter_beam_points = []
-            drone_point = Point(x=drone_pose.position.x, y=drone_pose.position.y, z=drone_pose.position.z)
-            for p in altimeter_plane_points:
-                altimeter_beam_points.append(drone_point)
-                altimeter_beam_points.append(p)
-
-            markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
-                ns="alt_beams_last",
-                id=0,
-                type=Marker.LINE_LIST,
-                action=Marker.ADD,
-                points=altimeter_beam_points,
-                scale=Vector3(x=0.05, y=0.05, z=0.05),
-                color=ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
-            ))
+        markers.append(Marker(
+            header=Header(frame_id=self.LOC_FRAME),
+            ns="alt_plane_last",
+            id=0,
+            type=Marker.SPHERE_LIST,
+            action=Marker.ADD,
+            points=altimeter_plane_points,
+            scale=Vector3(x=0.25, y=0.25, z=0.25),
+            color=self.color_profile
+        ))
 
         self.latest_pub.publish(MarkerArray(markers=markers))
+        self.get_logger().debug("Published latest")
 
         [latest_to_previous(m, self.i) for m in markers]
         self.previous_pub.publish(MarkerArray(markers=markers))
 
         self.i+=1
-
-    def generage_bboxes(self, msg: TargetBoxArray):
-        out = ImageAnnotations()
-        out.points = []
-        out.texts = []
-
-        for i, tb in enumerate(msg.uav_target_boxes):
-            assert(isinstance(tb, TargetBox))
-            ann = PointsAnnotation()
-            ann.timestamp = msg.header.stamp
-            ann.type = PointsAnnotation.LINE_LOOP
-            ann.thickness = 2.0
-            ann.outline_color.r = 0.0
-            ann.outline_color.g = 1.0
-            ann.outline_color.b = 0.0
-            ann.outline_color.a = 1.0
-            ann.outline_colors = []
-            ann.fill_color.r = 0.0
-            ann.fill_color.g = 1.0
-            ann.fill_color.b = 0.0
-            ann.fill_color.a = 0.12
-
-            box:BoundingBox2D = tb.target_bbox
-            cx = box.center.position.x
-            cy = box.center.position.y
-            th = box.center.theta
-            hx = box.size_x / 2
-            hy = box.size_y / 2
-
-            ct = math.cos(th)
-            st = math.sin(th)
-
-            points = [
-                (cx - hx, cy - hy),
-                (cx + hx, cy - hy),
-                (cx + hx, cy + hy),
-                (cx - hx, cy + hy)
-            ]
-
-            ann.points = []
-            for x, y in points:
-                dx = x - cx
-                dy = y - cy
-                ann.points.append(Point2(x=float(cx + ct*dx - st*dy), y=float(cy + st*dx + ct*dy)))
-
-            out.points.append(ann)
-
-            txt = TextAnnotation()
-            txt.timestamp = msg.header.stamp
-            txt.position = ann.points[0]
-            txt.text = str(i)
-            txt.font_size = 30.0
-            txt.text_color.r = 1.0
-            txt.text_color.g = 1.0
-            txt.text_color.b = 1.0
-            txt.text_color.a = 1.0
-            txt.background_color.r = 0.0
-            txt.background_color.g = 0.0
-            txt.background_color.b = 0.0
-            txt.background_color.a = 0.6
-
-            out.texts.append(txt)
-
-        self.bbox_pub.publish(out)
 
 def latest_to_previous(input:Marker, i: int):
     input.id = i

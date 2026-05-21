@@ -98,11 +98,11 @@ def build_nodes(paths: list[str], global_config: Path) -> list[Node]:
                 paths.append(sens)
 
         # still burgeoning functionality. removing until we build back up to localization viz
-        # vizs = config.get('viz', [])
-        # if len(vizs) > 0:
-        #     LOGGER.info(f"Adding new visualization files: {vizs}")
-        #     for viz in config.get("viz", []):
-        #         paths.append(Path(viz))
+        vizs = config.get('viz', [])
+        if len(vizs) > 0:
+            LOGGER.info(f"Adding new visualization files: {vizs}")
+            for viz in config.get("viz", []):
+                paths.append(Path(viz))
 
     return node_list
 
