@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 # ROS2 message imports
+from math import isclose
+from typing import Optional, Tuple
+
 from geometry_msgs.msg import (
     Point,
     PoseStamped,
@@ -148,6 +151,13 @@ class Vehicle(FrameMember):
         else:
             self.SENSORS = []
 
+        # Position tolerance for path de-duplication
+        if self.has_parameter('position_tolerance'):
+            self.POSITION_TOLERANCE = float(self.get_parameter('position_tolerance').value)
+        else:
+            self.default_parameter_warning('position_tolerance')
+            self.POSITION_TOLERANCE = 0.0254  # 1 inch in meters
+
         # Message Schema
         if self.has_parameter('message_schema'):
             msg_schema_str = self.get_parameter('message_schema').get_parameter_value().string_value
@@ -187,6 +197,7 @@ class Vehicle(FrameMember):
         # Initialize state variables for velocity and position tracking
         self.drone_velocity = [0.0, 0.0, 0.0]  # Current velocity (m/s)
         self.drone_pos = [0.0, 0.0, 0.0]  # Current position (m)
+        self.last_drone_pos: Optional[Tuple[float, float, float]] = None  # Last position reading
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
 
@@ -205,7 +216,7 @@ class Vehicle(FrameMember):
     def publish_position(self, msg: PoseStamped | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas
-        head_out = Header(frame_id=self.PARENT_FRAME)
+        head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
 
         path_update = PoseStamped()
 
@@ -218,7 +229,10 @@ class Vehicle(FrameMember):
                 x_in=float(pos_in[0]), y_in=float(pos_in[1]), z_in=float(pos_in[2])
             )
             q_out_frd = Quaternion(
-                x=float(msg.q[1]), y=float(msg.q[2]), z=float(msg.q[3]), w=float(msg.q[0])
+                x=float(msg.q[1]),
+                y=float(msg.q[2]),
+                z=float(msg.q[3]),
+                w=float(msg.q[0]),
             )
 
             q_out_flu = frd_ned_2_flu_enu(q_out_frd)
@@ -235,8 +249,8 @@ class Vehicle(FrameMember):
                 x_in=float(vel_in[0]), y_in=float(vel_in[1]), z_in=float(vel_in[2])
             )
             self.drone_velocity = [vel_out.x, vel_out.y, vel_out.z]
-
-            self.drone_pos = [pos_out.x, pos_out.y, pos_out.z]
+            new_pos = (float(pos_out.x), float(pos_out.y), float(pos_out.z))
+            self.drone_pos = list(new_pos)
 
         else:
             assert isinstance(msg, PoseStamped)
@@ -255,9 +269,11 @@ class Vehicle(FrameMember):
                 vel_in = self.VELOCITY.twist.linear
                 self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
-            self.drone_pos = [float(pos_in.x), float(pos_in.y), float(pos_in.z)]
+            new_pos = (float(pos_in.x), float(pos_in.y), float(pos_in.z))
+            self.drone_pos = list(new_pos)
 
         path_update.header = head_out
+        self.path.header.stamp = path_update.header.stamp
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -269,8 +285,11 @@ class Vehicle(FrameMember):
 
         # build PoseStamped for path
         # Path update
-        self.path.poses.append(path_update)  # type: ignore
-        self.path.header.stamp = path_update.header.stamp
+        if self.last_drone_pos is None or not self._positions_equal(
+            self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
+        ):
+            self.path.poses.append(path_update)  # type: ignore
+            self.last_drone_pos = new_pos
 
         # Publish altimeter plane
         if self.ALTITUDE:
@@ -364,6 +383,12 @@ class Vehicle(FrameMember):
             raise ValueError(
                 f'Unable to determine the coordinate frame for message type: {self.POSE_FRAME}'
             )
+
+    @staticmethod
+    def _positions_equal(
+        a: Tuple[float, float, float], b: Tuple[float, float, float], tol: float = 1e-6
+    ) -> bool:
+        return all(isclose(x, y, rel_tol=0.0, abs_tol=tol) for x, y in zip(a, b))
 
     def _format(self, tab_depth: int = 0) -> str:
         t1 = self._tab_char * tab_depth
