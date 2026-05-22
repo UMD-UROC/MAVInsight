@@ -286,7 +286,9 @@ class Vehicle(FrameMember):
         # build PoseStamped for path
         # Path update
         assert new_pos is not None, (
-            'new_pos should be set by VehicleOdometry or PoseStamped transformation logic'
+            'new_pos should be set by '
+            f'{type(msg).__name__} transformation logic '
+            f'(schema={self.LOCATION_MSG_TYPE.__name__})'
         )
         if self.last_drone_pos is None or not self._positions_equal(
             self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
