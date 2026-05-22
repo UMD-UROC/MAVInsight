@@ -1,10 +1,10 @@
 # python imports
 from __future__ import annotations
 
-# ROS2 message imports
 from math import isclose
 from typing import Optional, Tuple
 
+# ROS2 message imports
 from geometry_msgs.msg import (
     Point,
     PoseStamped,
@@ -197,7 +197,9 @@ class Vehicle(FrameMember):
         # Initialize state variables for velocity and position tracking
         self.drone_velocity = [0.0, 0.0, 0.0]  # Current velocity (m/s)
         self.drone_pos = [0.0, 0.0, 0.0]  # Current position (m)
-        self.last_drone_pos: Optional[Tuple[float, float, float]] = None  # Last position reading
+        self.last_drone_pos: Optional[Tuple[float, float, float]] = (
+            None  # Last published position for path de-duplication
+        )
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
 
