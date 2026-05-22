@@ -219,6 +219,7 @@ class Vehicle(FrameMember):
         head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
 
         path_update = PoseStamped()
+        new_pos: Optional[Tuple[float, float, float]] = None
 
         # transform
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
@@ -273,7 +274,7 @@ class Vehicle(FrameMember):
             self.drone_pos = list(new_pos)
 
         path_update.header = head_out
-        self.path.header.stamp = path_update.header.stamp
+        assert new_pos is not None
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -290,6 +291,7 @@ class Vehicle(FrameMember):
         ):
             self.path.poses.append(path_update)  # type: ignore
             self.last_drone_pos = new_pos
+            self.path.header.stamp = path_update.header.stamp
 
         # Publish altimeter plane
         if self.ALTITUDE:
