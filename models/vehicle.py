@@ -274,7 +274,6 @@ class Vehicle(FrameMember):
             self.drone_pos = list(new_pos)
 
         path_update.header = head_out
-        assert new_pos is not None
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -286,6 +285,7 @@ class Vehicle(FrameMember):
 
         # build PoseStamped for path
         # Path update
+        assert new_pos is not None, 'new_pos should be set by position transformation logic'
         if self.last_drone_pos is None or not self._positions_equal(
             self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
         ):
