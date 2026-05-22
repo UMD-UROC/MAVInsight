@@ -1,10 +1,10 @@
 # python imports
 from __future__ import annotations
 
-# ROS2 message imports
 from math import isclose
 from typing import Optional, Tuple
 
+# ROS2 message imports
 from geometry_msgs.msg import (
     Point,
     PoseStamped,
@@ -21,11 +21,13 @@ from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
+from models.frame_member import FrameMember
+
 # MAVInsight imports
 from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
-from models.frame_member import FrameMember
 from models.platforms import Platforms
 from models.qos_profiles import reliable_qos, viz_qos
+
 
 class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -50,133 +52,141 @@ class Vehicle(FrameMember):
     def __init__(self):
         super().__init__()
         self.latest_header = None
-        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Vehicle params...")
+        self.get_logger().info(f'[{self.DISPLAY_NAME}]: Ingesting Vehicle params...')
 
         # ingest ROS parameters. Notify user when defaults are being used
-        if self.has_parameter("altitude_topic"):
-            alt_topic = self.get_parameter("altitude_topic").get_parameter_value().string_value
+        if self.has_parameter('altitude_topic'):
+            alt_topic = self.get_parameter('altitude_topic').get_parameter_value().string_value
         else:
             self.default_parameter_warning('altitude_topic')
-            alt_topic = "/altitude"
+            alt_topic = '/altitude'
 
         # Global Refresh Rate
-        if self.has_parameter("refresh_rate"):
+        if self.has_parameter('refresh_rate'):
             self.REFRESH_RATE = (
-                self.get_parameter("refresh_rate").get_parameter_value().double_value
+                self.get_parameter('refresh_rate').get_parameter_value().double_value
             )
         else:
-            self.default_parameter_warning("refresh_rate")
+            self.default_parameter_warning('refresh_rate')
             self.REFRESH_RATE = 60.0  # Hz
 
         # Namespace
-        if self.has_parameter("namespace"):
-            namespace = (
-                self.get_parameter("namespace").get_parameter_value().string_value
-            )
+        if self.has_parameter('namespace'):
+            namespace = self.get_parameter('namespace').get_parameter_value().string_value
         else:
-            self.default_parameter_warning("namespace")
-            namespace = "/uas/"
+            self.default_parameter_warning('namespace')
+            namespace = '/uas/'
 
         # ekf origin
-        if self.has_parameter("ekf_origin_fix_topic"):
-            ekf_topic = self.get_parameter("ekf_origin_fix_topic").get_parameter_value().string_value
+        if self.has_parameter('ekf_origin_fix_topic'):
+            ekf_topic = (
+                self.get_parameter('ekf_origin_fix_topic').get_parameter_value().string_value
+            )
         else:
-            raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin fix topic param not set. Unable to initialize Vehicle node.")
+            raise RuntimeError(
+                f'Vehicle Node: {self.DISPLAY_NAME} ekf origin fix topic param not set. Unable to initialize Vehicle node.'
+            )
 
-        if self.has_parameter("ekf_origin_frame"):
-            self.EKF_FRAME = self.get_parameter("ekf_origin_frame").get_parameter_value().string_value
+        if self.has_parameter('ekf_origin_frame'):
+            self.EKF_FRAME = (
+                self.get_parameter('ekf_origin_frame').get_parameter_value().string_value
+            )
         else:
-            raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin frame param not set. Unable to initialize Vehicle node.")
+            raise RuntimeError(
+                f'Vehicle Node: {self.DISPLAY_NAME} ekf origin frame param not set. Unable to initialize Vehicle node.'
+            )
 
         # Home Position
-        if self.has_parameter("home_position_topic"):
-            home_pos_topic = self.get_parameter("home_position_topic").get_parameter_value().string_value
+        if self.has_parameter('home_position_topic'):
+            home_pos_topic = (
+                self.get_parameter('home_position_topic').get_parameter_value().string_value
+            )
         else:
-            self.default_parameter_warning("home_position_topic")
-            home_pos_topic = "/home_position/home"
+            self.default_parameter_warning('home_position_topic')
+            home_pos_topic = '/home_position/home'
 
-        if self.has_parameter("home_fix_topic"):
-            home_fix_topic = self.get_parameter("home_fix_topic").get_parameter_value().string_value
+        if self.has_parameter('home_fix_topic'):
+            home_fix_topic = self.get_parameter('home_fix_topic').get_parameter_value().string_value
         else:
-            self.default_parameter_warning("home_fix_topic")
-            home_fix_topic = "/home_position/fix"
+            self.default_parameter_warning('home_fix_topic')
+            home_fix_topic = '/home_position/fix'
 
-        if self.has_parameter("home_frame_topic"):
-            self.HOME_FRAME = self.get_parameter("home_frame_topic").get_parameter_value().string_value
+        if self.has_parameter('home_frame_topic'):
+            self.HOME_FRAME = (
+                self.get_parameter('home_frame_topic').get_parameter_value().string_value
+            )
         else:
-            self.default_parameter_warning("home_frame_topic")
-            self.HOME_FRAME = "home_position"
+            self.default_parameter_warning('home_frame_topic')
+            self.HOME_FRAME = 'home_position'
 
         # Location Topic
-        if self.has_parameter("location_topic"):
+        if self.has_parameter('location_topic'):
             self.LOCATION_TOPIC = (
-                self.get_parameter("location_topic").get_parameter_value().string_value
+                self.get_parameter('location_topic').get_parameter_value().string_value
             )
         else:
-            self.default_parameter_warning("location_topic")
-            self.LOCATION_TOPIC = "gps"
+            self.default_parameter_warning('location_topic')
+            self.LOCATION_TOPIC = 'gps'
 
-        if self.has_parameter("velocity_topic"):
-            velocity_topic = self.get_parameter("velocity_topic").get_parameter_value().string_value
+        if self.has_parameter('velocity_topic'):
+            velocity_topic = self.get_parameter('velocity_topic').get_parameter_value().string_value
         else:
-            self.default_parameter_warning("velocity_topic")
-            velocity_topic = "vel"
+            self.default_parameter_warning('velocity_topic')
+            velocity_topic = 'vel'
 
         # Platform Type
-        if self.has_parameter("platform"):
+        if self.has_parameter('platform'):
             self.PLATFORM = Platforms(
-                self.get_parameter("platform").get_parameter_value().string_value
+                self.get_parameter('platform').get_parameter_value().string_value
             )
         else:
-            self.default_parameter_warning("platform")
+            self.default_parameter_warning('platform')
             self.PLATFORM = Platforms.DEFAULT
 
         # Sensors
-        if self.has_parameter("sensors"):
+        if self.has_parameter('sensors'):
             self.SENSORS = list(
-                self.get_parameter("sensors").get_parameter_value().string_array_value
+                self.get_parameter('sensors').get_parameter_value().string_array_value
             )
         else:
             self.SENSORS = []
 
         # Position tolerance for path de-duplication
-        if self.has_parameter("position_tolerance"):
-            self.POSITION_TOLERANCE = float(
-                self.get_parameter("position_tolerance").value
-            )
+        if self.has_parameter('position_tolerance'):
+            self.POSITION_TOLERANCE = float(self.get_parameter('position_tolerance').value)
         else:
-            self.default_parameter_warning("position_tolerance")
+            self.default_parameter_warning('position_tolerance')
             self.POSITION_TOLERANCE = 0.0254  # 1 inch in meters
 
         # Message Schema
-        if self.has_parameter("message_schema"):
-            msg_schema_str = (
-                self.get_parameter("message_schema").get_parameter_value().string_value
-            )
-            if msg_schema_str.lower() == "px4_msgs":
+        if self.has_parameter('message_schema'):
+            msg_schema_str = self.get_parameter('message_schema').get_parameter_value().string_value
+            if msg_schema_str.lower() == 'px4_msgs':
                 self.LOCATION_MSG_TYPE = VehicleOdometry
             else:
                 self.LOCATION_MSG_TYPE = PoseStamped
         else:
-            self.default_parameter_warning("message_schema")
+            self.default_parameter_warning('message_schema')
             self.LOCATION_MSG_TYPE = PoseStamped
 
         # Initialize subscribers
         self.create_subscription(Altitude, alt_topic, self.update_alt, viz_qos)
-        self.create_subscription(self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos)
+        self.create_subscription(
+            self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos
+        )
         self.create_subscription(HomePosition, home_pos_topic, self.home_cb, viz_qos)
         self.create_subscription(TwistStamped, velocity_topic, self.update_velocity, viz_qos)
         self.ALTITUDE = None
         self.VELOCITY = None
 
         # Initialize publishers
-        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
+        self.path_pub = self.create_publisher(Path, f'{namespace}flightPath', reliable_qos)
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, reliable_qos)
         self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
 
         # Publisher for velocity vector visualization markers
         self.velocity_vector_marker_pub = self.create_publisher(
-            Marker, f"{namespace}velocityVector", reliable_qos
+            Marker, f'{namespace}velocityVector', reliable_qos
         )
 
         # Internal storage for path visualizer
@@ -188,7 +198,7 @@ class Vehicle(FrameMember):
         self.drone_velocity = [0.0, 0.0, 0.0]  # Current velocity (m/s)
         self.drone_pos = [0.0, 0.0, 0.0]  # Current position (m)
         self.last_drone_pos: Optional[Tuple[float, float, float]] = (
-            None  # Last position reading
+            None  # Last published position for path de-duplication
         )
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
@@ -197,20 +207,18 @@ class Vehicle(FrameMember):
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
-        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
+        self.get_logger().info(f'[{self.DISPLAY_NAME}]: Vehicle initialized!')
 
     def update_alt(self, msg: Altitude):
-        self.ALTITUDE=msg
+        self.ALTITUDE = msg
 
     def update_velocity(self, msg: TwistStamped):
-        self.VELOCITY=msg
+        self.VELOCITY = msg
 
     def publish_position(self, msg: PoseStamped | VehicleOdometry):
         # header
         # TODO: double check time sync between message schemas
-        head_out = Header(
-            stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME
-        )
+        head_out = Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME)
 
         path_update = PoseStamped()
 
@@ -267,15 +275,12 @@ class Vehicle(FrameMember):
             self.drone_pos = list(new_pos)
 
         path_update.header = head_out
-        self.path.header.stamp = path_update.header.stamp
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
 
         # build TF
-        t = TransformStamped(
-            header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out
-        )
+        t = TransformStamped(header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out)
 
         self.tf_broadcaster.sendTransform(t)
 
@@ -286,6 +291,7 @@ class Vehicle(FrameMember):
         ):
             self.path.poses.append(path_update)  # type: ignore
             self.last_drone_pos = new_pos
+            self.path.header.stamp = path_update.header.stamp
 
         # Publish altimeter plane
         if self.ALTITUDE:
@@ -295,35 +301,41 @@ class Vehicle(FrameMember):
             # altitude.relative seems to publish the drone height relative to the home position (not sure why this is inconsistent with reality)
             # altitude.bottom_clearance : I'm assuming this would be consistent with the plane that the drone is hovering over.
             alt_t.translation.z -= self.ALTITUDE.bottom_clearance
-            self.tf_broadcaster.sendTransform(TransformStamped(
-                header=head_out,
-                child_frame_id=f"{self.FRAME_NAME}_alt_plane",
-                transform=alt_t
-            ))
-
+            self.tf_broadcaster.sendTransform(
+                TransformStamped(
+                    header=head_out, child_frame_id=f'{self.FRAME_NAME}_alt_plane', transform=alt_t
+                )
+            )
 
     def home_cb(self, msg: HomePosition):
         home_fix = NavSatFix(
             header=Header(frame_id=self.HOME_FRAME),
             latitude=msg.geo.latitude,
             longitude=msg.geo.longitude,
-            altitude=msg.geo.altitude
+            altitude=msg.geo.altitude,
         )
         self.home_fix_pub.publish(home_fix)
-        self.tf_broadcaster.sendTransform(TransformStamped(
-            header=Header(stamp=self.get_clock().now().to_msg(), frame_id=self.HOME_FRAME),
-            child_frame_id=self.EKF_FRAME,
-            transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
-        ))
+        self.tf_broadcaster.sendTransform(
+            TransformStamped(
+                header=Header(stamp=self.get_clock().now().to_msg(), frame_id=self.HOME_FRAME),
+                child_frame_id=self.EKF_FRAME,
+                transform=Transform(
+                    translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z)
+                ),
+            )
+        )
 
-        (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
-        self.ekf_fix_pub.publish(NavSatFix(
-            header=Header(frame_id=self.EKF_FRAME),
-            latitude=lat_e,
-            longitude=lon_e,
-            altitude=alt_e
-        ))
-
+        (lat_e, lon_e, alt_e) = enu_2_lla(
+            home_fix, -msg.position.x, -msg.position.y, -msg.position.z
+        )
+        self.ekf_fix_pub.publish(
+            NavSatFix(
+                header=Header(frame_id=self.EKF_FRAME),
+                latitude=lat_e,
+                longitude=lon_e,
+                altitude=alt_e,
+            )
+        )
 
     def publish_path(self):
         if self.path.poses:
@@ -345,14 +357,12 @@ class Vehicle(FrameMember):
         velocity_vector_marker = Marker()
         velocity_vector_marker.header.stamp = stamp
         velocity_vector_marker.header.frame_id = self.PARENT_FRAME
-        velocity_vector_marker.ns = "velocity_vector"
+        velocity_vector_marker.ns = 'velocity_vector'
         velocity_vector_marker.id = 0
         velocity_vector_marker.type = Marker.ARROW
         velocity_vector_marker.action = Marker.ADD
 
-        start_point = Point(
-            x=self.drone_pos[0], y=self.drone_pos[1], z=self.drone_pos[2]
-        )
+        start_point = Point(x=self.drone_pos[0], y=self.drone_pos[1], z=self.drone_pos[2])
 
         end_point = Point(x=target_pos[0], y=target_pos[1], z=target_pos[2])
         velocity_vector_marker.points = [start_point, end_point]
@@ -367,13 +377,13 @@ class Vehicle(FrameMember):
         self.velocity_vector_marker_pub.publish(velocity_vector_marker)
 
     def position_conversion(self, x_in: float, y_in: float, z_in: float) -> Vector3:
-        if "ned" in self.POSE_FRAME:
+        if 'ned' in self.POSE_FRAME:
             return Vector3(x=y_in, y=x_in, z=-z_in)
-        elif "enu" in self.POSE_FRAME:
+        elif 'enu' in self.POSE_FRAME:
             return Vector3(x=x_in, y=y_in, z=z_in)
         else:
             raise ValueError(
-                f"Unable to determine the coordinate frame for message type: {self.POSE_FRAME}"
+                f'Unable to determine the coordinate frame for message type: {self.POSE_FRAME}'
             )
 
     @staticmethod
@@ -385,14 +395,14 @@ class Vehicle(FrameMember):
     def _format(self, tab_depth: int = 0) -> str:
         t1 = self._tab_char * tab_depth
         t2 = t1 + self._tab_char
-        sensors_string = "[]" if len(self.SENSORS) == 0 else "\n"
+        sensors_string = '[]' if len(self.SENSORS) == 0 else '\n'
         return (
-            f"Vehicle Structure ({self.get_name()}):\n"
-            + f"{t1}{self.DISPLAY_NAME} | Vehicle ({self.PLATFORM.name})\n"
-            + f"{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n"
-            + f"{t2}Location Topic: {self.LOCATION_TOPIC}\n"
-            + f"{t2}Sensors: {sensors_string}"
-            + ("\n".join(t2 + self._tab_char + s for s in self.SENSORS))
+            f'Vehicle Structure ({self.get_name()}):\n'
+            + f'{t1}{self.DISPLAY_NAME} | Vehicle ({self.PLATFORM.name})\n'
+            + f'{t2}Transform: {self.PARENT_FRAME} -> {self.FRAME_NAME}\n'
+            + f'{t2}Location Topic: {self.LOCATION_TOPIC}\n'
+            + f'{t2}Sensors: {sensors_string}'
+            + ('\n'.join(t2 + self._tab_char + s for s in self.SENSORS))
         )
 
     def __str__(self):

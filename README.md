@@ -28,3 +28,23 @@ list_property:
  - list_value2
 empyt_list_property: []
 ```
+
+## Formatting
+This package uses Ruff for Python formatting and import ordering. The formatter is configured
+for ROS 2's Python style preferences and Ubuntu 22.04 / Python 3.10 compatibility in
+`pyproject.toml`.
+
+Install the formatter:
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Format the repository:
+```bash
+./scripts/format
+```
+
+Check formatting without modifying files:
+```bash
+./scripts/check-format
+```

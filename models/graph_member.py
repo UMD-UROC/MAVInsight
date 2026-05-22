@@ -6,6 +6,7 @@ import rclpy
 from rclpy.node import Node
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
+
 class GraphMember(Node):
     """The base class/Node for all objects that could be displayed in the 3D panel of
     Foxglove.
@@ -29,21 +30,23 @@ class GraphMember(Node):
 
     # Constructors
     def __init__(self):
-        super().__init__("graph_member", automatically_declare_parameters_from_overrides=True)
-        self.get_logger().info(f"Received node name: {self.get_name()}")
-        self.get_logger().info(f"Ingesting Graph Member params...")
+        super().__init__('graph_member', automatically_declare_parameters_from_overrides=True)
+        self.get_logger().info(f'Received node name: {self.get_name()}')
+        self.get_logger().info(f'Ingesting Graph Member params...')
 
         # Ingest ROS parameters. Notify user when defaults are being used.
         if self.has_parameter('display_name'):
-            self.DISPLAY_NAME = self.get_parameter('display_name').get_parameter_value().string_value
+            self.DISPLAY_NAME = (
+                self.get_parameter('display_name').get_parameter_value().string_value
+            )
         else:
-            self.default_parameter_warning("display_name")
-            self.DISPLAY_NAME = "Default Vehicle Name"
+            self.default_parameter_warning('display_name')
+            self.DISPLAY_NAME = 'Default Vehicle Name'
 
         if self.has_parameter('tab_char'):
             self._tab_char = self.get_parameter('tab_char').get_parameter_value().string_value
         else:
-            self._tab_char = "|   "
+            self._tab_char = '|   '
 
         # initialize TF broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -52,15 +55,15 @@ class GraphMember(Node):
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
 
         # Wait for foxglove to subscribe to our topics
-        self.get_logger().info(f"Waiting for Foxglove...")
+        self.get_logger().info(f'Waiting for Foxglove...')
         i = 0
         while self.count_subscribers('/tf_static') == 0:
-            self.get_logger().info(f"...{i*5}sec")
-            i+=1
+            self.get_logger().info(f'...{i * 5}sec')
+            i += 1
             time.sleep(5.0)
-        self.get_logger().info(f"Foxglove found.")
+        self.get_logger().info(f'Foxglove found.')
 
-        self.get_logger().info(f"[{self.DISPLAY_NAME}]: Graph Member initialized!")
+        self.get_logger().info(f'[{self.DISPLAY_NAME}]: Graph Member initialized!')
 
     def default_parameter_warning(self, param_name: str):
         """Helper method to output a boilerplate warning indicating that a default
@@ -71,7 +74,7 @@ class GraphMember(Node):
         param_name : str
             The name of the parameter to be used in the warning.
         """
-        self.get_logger().warn(f"Parameter {param_name} not set in config file. using default")
+        self.get_logger().warn(f'Parameter {param_name} not set in config file. using default')
 
     @classmethod
     def main(cls, args=None):
@@ -82,7 +85,7 @@ class GraphMember(Node):
         except KeyboardInterrupt:
             pass
         finally:
-            print("Shutting down...")
+            print('Shutting down...')
             node.destroy_node()
             if rclpy.ok():
                 rclpy.shutdown()
