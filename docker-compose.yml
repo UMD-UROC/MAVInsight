@@ -1,9 +1,15 @@
 services:
   px4:
-    image: px4io/px4-sitl:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.px4
+    image: mavinsight-px4-sitl
     stdin_open: true
     tty: true
     init: true
+    environment:
+      - ROS_DOMAIN_ID=0
+      - PX4_UXRCE_DDS_PORT=8888
     ports:
       # Foxglove websocket bridge.
       - "8765:8765/tcp"
@@ -21,6 +27,7 @@ services:
     network_mode: "service:px4"
     environment:
       - ROS_DISTRO=humble
+      - ROS_DOMAIN_ID=0
       - ROS_WS=/ws
       - SKIP_COLCON_BUILD=0
       - START_UXRCE_AGENT=1
