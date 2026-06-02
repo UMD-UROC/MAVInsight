@@ -1,0 +1,22 @@
+services:
+  px4:
+    image: px4io/px4-sitl:latest
+    ports:
+      - "14550:14550/udp"
+
+  ros2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - px4
+    ports:
+      - "8765:8765"
+    environment:
+      - ROS_DISTRO=humble
+      - ROS_WS=/ws
+      - SKIP_COLCON_BUILD=0
+      - START_UXRCE_AGENT=1
+      - MAVINSIGHT_LAUNCH=launch_all_vehicles_no_tba.launch.py
+    volumes:
+      - .:/ws/src/mavinsight:rw
