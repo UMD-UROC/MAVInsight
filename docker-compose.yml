@@ -1,22 +1,31 @@
 services:
   px4:
     image: px4io/px4-sitl:latest
+    stdin_open: true
+    tty: true
+    init: true
     ports:
-      - "14550:14550/udp"
+      # Foxglove websocket bridge.
+      - "8765:8765/tcp"
+      # Do not publish 14550/udp by default. QGroundControl binds that host
+      # port for UDP AutoConnect, and Docker publishing it causes:
+      # "Link UDP Link (AutoConnect): The bound address is already in use".
 
   ros2:
     build:
       context: .
       dockerfile: Dockerfile
+    init: true
     depends_on:
       - px4
-    ports:
-      - "8765:8765"
+    network_mode: "service:px4"
     environment:
       - ROS_DISTRO=humble
       - ROS_WS=/ws
       - SKIP_COLCON_BUILD=0
       - START_UXRCE_AGENT=1
+      - UXRCE_DDS_PORT=8888
+      - FOXGLOVE_PORT=8765
       - MAVINSIGHT_LAUNCH=launch_all_vehicles_no_tba.launch.py
     volumes:
       - .:/ws/src/mavinsight:rw

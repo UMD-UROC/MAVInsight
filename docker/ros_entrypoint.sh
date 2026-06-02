@@ -7,6 +7,7 @@ set -euo pipefail
 : "${START_UXRCE_AGENT:=1}"
 : "${UXRCE_DDS_TRANSPORT:=udp4}"
 : "${UXRCE_DDS_PORT:=8888}"
+: "${FOXGLOVE_PORT:=8765}"
 
 # Avoid nounset failures from generated setup scripts.
 set +u
@@ -26,6 +27,13 @@ set -u
 
 pids=()
 
+shutdown() {
+  if [ "${#pids[@]}" -gt 0 ]; then
+    kill "${pids[@]}" 2>/dev/null || true
+    wait "${pids[@]}" 2>/dev/null || true
+  fi
+}
+
 if [ "${START_UXRCE_AGENT}" != "0" ]; then
   MicroXRCEAgent "${UXRCE_DDS_TRANSPORT}" -p "${UXRCE_DDS_PORT}" &
   pids+=("$!")
@@ -33,8 +41,8 @@ fi
 
 ros2 launch mavinsight "${MAVINSIGHT_LAUNCH}" &
 pids+=("$!")
-ros2 launch foxglove_bridge foxglove_bridge_launch.xml &
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:="${FOXGLOVE_PORT}" &
 pids+=("$!")
 
-trap 'kill "${pids[@]}"; wait' SIGINT SIGTERM
+trap shutdown SIGINT SIGTERM EXIT
 wait -n "${pids[@]}"
