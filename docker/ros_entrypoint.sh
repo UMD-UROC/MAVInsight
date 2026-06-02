@@ -8,6 +8,10 @@ set -euo pipefail
 : "${UXRCE_DDS_TRANSPORT:=udp4}"
 : "${UXRCE_DDS_PORT:=8888}"
 : "${FOXGLOVE_PORT:=8765}"
+: "${START_MAVROS:=1}"
+: "${MAVROS_NAMESPACE:=uas4}"
+: "${MAVROS_FCU_URL:=udp://:14540@127.0.0.1:14580}"
+: "${MAVROS_GCS_URL:=}"
 
 # Avoid nounset failures from generated setup scripts.
 set +u
@@ -36,6 +40,18 @@ shutdown() {
 
 if [ "${START_UXRCE_AGENT}" != "0" ]; then
   MicroXRCEAgent "${UXRCE_DDS_TRANSPORT}" -p "${UXRCE_DDS_PORT}" &
+  pids+=("$!")
+fi
+
+if [ "${START_MAVROS}" != "0" ]; then
+  mavros_args=(
+    "namespace:=${MAVROS_NAMESPACE}"
+    "fcu_url:=${MAVROS_FCU_URL}"
+  )
+  if [ -n "${MAVROS_GCS_URL}" ]; then
+    mavros_args+=("gcs_url:=${MAVROS_GCS_URL}")
+  fi
+  ros2 launch mavros px4.launch "${mavros_args[@]}" &
   pids+=("$!")
 fi
 

@@ -13,9 +13,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-yaml \
     python3-scipy \
     python3-pymap3d \
+    ros-humble-mavros \
+    ros-humble-mavros-extras \
     ros-humble-mavros-msgs \
     ros-humble-foxglove-bridge \
   && rm -rf /var/lib/apt/lists/*
+
+RUN if [ -x /opt/ros/${ROS_DISTRO}/lib/mavros/install_geographiclib_datasets.sh ]; then \
+      /opt/ros/${ROS_DISTRO}/lib/mavros/install_geographiclib_datasets.sh; \
+    fi
 
 WORKDIR ${ROS_WS}
 RUN mkdir -p ${ROS_WS}/src

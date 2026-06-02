@@ -32,6 +32,9 @@ services:
       - SKIP_COLCON_BUILD=0
       - START_UXRCE_AGENT=1
       - UXRCE_DDS_PORT=8888
+      - START_MAVROS=1
+      - MAVROS_NAMESPACE=uas4
+      - MAVROS_FCU_URL=udp://:14540@127.0.0.1:14580
       - FOXGLOVE_PORT=8765
       - MAVINSIGHT_LAUNCH=launch_all_vehicles_no_tba.launch.py
     volumes:
