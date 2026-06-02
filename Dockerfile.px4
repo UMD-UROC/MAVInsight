@@ -1,0 +1,6 @@
+FROM px4io/px4-sitl:latest
+
+COPY docker/px4_entrypoint.sh /opt/px4/bin/px4-entrypoint-mavinsight.sh
+RUN chmod +x /opt/px4/bin/px4-entrypoint-mavinsight.sh
+
+ENTRYPOINT ["/opt/px4/bin/px4-entrypoint-mavinsight.sh"]
