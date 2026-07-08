@@ -13,7 +13,7 @@ LOGGER = logging.get_logger("vehicle_launch_logger")
 share_dir = Path(get_package_share_directory(package_name))
 shared_resources = share_dir / "package_resources"
 global_config = shared_resources / 'global_node_config.yaml'
-launch_specs = shared_resources / 'launch_specs.yaml'
+launch_specs = shared_resources / 'd4_launch_specs.yaml'
 
 def generate_launch_description():
     ld = LaunchDescription()
