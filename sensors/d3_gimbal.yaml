@@ -1,0 +1,18 @@
+/**/*:
+  two_axis_gimbal:
+    ros__parameters:
+      display_name: 2-Axis Gimbal (D3)
+      executable: gimbal
+      frame_name: d3_gimbal_frame
+      offset:
+        - 0.205
+        - 0.0
+        - -0.081
+      coord_frame: ned-frd
+      orientation_topic: /uas3/gimbal_control/device/attitude_status
+      command_topic: /uas3/gimbal_control/manager/set_attitude
+      parent_frame: d3_base_link
+      sensor_type: gimbal
+      sensors:
+        - d3_rangefinder.yaml
+        - wide_cam.yaml

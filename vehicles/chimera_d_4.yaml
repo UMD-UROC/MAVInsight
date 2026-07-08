@@ -22,6 +22,6 @@
       platform: quad
       velocity_topic: "uas4/local_position/velocity_local"
       sensors:
-        - two_axis_gimbal.yaml
+        - d4_gimbal.yaml
       viz:
         - uas4_tba.yaml

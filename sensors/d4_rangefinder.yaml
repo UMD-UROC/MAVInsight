@@ -1,9 +1,9 @@
 /**/*:
   rangefinder:
     ros__parameters:
-      display_name: Rangefinder (Gimbal)
+      display_name: Rangefinder (Gimbal, D4)
       executable: rangefinder
-      frame_name: rangefinder_frame
+      frame_name: d4_rangefinder_frame
       offset:
         - 0.0
         - 0.025

@@ -14,5 +14,5 @@
       parent_frame: d4_base_link
       sensor_type: gimbal
       sensors:
-        - rangefinder.yaml
+        - d4_rangefinder.yaml
         - narrow_cam.yaml

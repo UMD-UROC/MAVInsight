@@ -1,0 +1,16 @@
+/**/*:
+  rangefinder:
+    ros__parameters:
+      display_name: Rangefinder (Gimbal, D3)
+      executable: rangefinder
+      frame_name: d3_rangefinder_frame
+      offset:
+        - 0.0
+        - 0.025
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+      range_topic: /uas4/gimbal_lidar_50m
+      parent_frame: d4_gimbal_frame
+      sensor_type: rangefinder
