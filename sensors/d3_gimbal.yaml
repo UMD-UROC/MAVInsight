@@ -1,5 +1,5 @@
 /**/*:
-  two_axis_gimbal:
+  d3_gimbal:
     ros__parameters:
       display_name: 2-Axis Gimbal (D3)
       executable: gimbal

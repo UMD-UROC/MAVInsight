@@ -1,5 +1,5 @@
 /**/*:
-  rangefinder:
+  d3_rangefinder:
     ros__parameters:
       display_name: Rangefinder (Gimbal, D3)
       executable: rangefinder

@@ -1,5 +1,5 @@
 /**/*:
-  narrow_cam:
+  wide_cam:
     ros__parameters:
       display_name: RGB Camera (D3)
       executable: camera

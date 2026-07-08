@@ -1,5 +1,5 @@
 /**/*:
-  two_axis_gimbal:
+  d4_gimbal:
     ros__parameters:
       display_name: 2-Axis Gimbal (D4)
       executable: gimbal
