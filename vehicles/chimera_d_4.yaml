@@ -6,6 +6,8 @@
       ekf_origin_fix_topic: /uas4/ekf_origin/fix
       ekf_origin_frame: uas4_ekf_origin
       executable: vehicle
+      fiducial_offset_frame: d4_fiducial_offset
+      fiducial_update_topic: /uas4/fiducial_update
       frame_name: d4_base_link
       gimbal_flags_topic: /uas4/gimbal_control/manager/set_attitude
       gimbal_offset_frame: d4_gimbal_frame_offset

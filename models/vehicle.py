@@ -82,6 +82,16 @@ class Vehicle(FrameMember):
         else:
             raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin frame param not set. Unable to initialize Vehicle node.")
 
+        if self.has_parameter("fiducial_offset_frame"):
+            fiducial_offset_frame = self.get_parameter("fiducial_offset_frame").get_parameter_value().string_value
+        else:
+            fiducial_offset_frame = "fiducial_offset"
+
+        if self.has_parameter("fiducial_update_topic"):
+            fiducial_update_topic = self.get_parameter("fiducial_update_topic").get_parameter_value().string_value
+        else:
+            fiducial_update_topic = "fiducial_update"
+
         # Home Position
         if self.has_parameter("home_position_topic"):
             home_pos_topic = self.get_parameter("home_position_topic").get_parameter_value().string_value
@@ -143,6 +153,7 @@ class Vehicle(FrameMember):
         self.create_subscription(self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos)
         self.create_subscription(HomePosition, home_pos_topic, self.home_cb, viz_qos)
         self.create_subscription(TwistStamped, velocity_topic, self.update_velocity, viz_qos)
+        self.create_subscription(TransformStamped, fiducial_update_topic, self.update_fiducial, reliable_qos)
         self.ALTITUDE = None
         self.VELOCITY = None
 
@@ -178,6 +189,12 @@ class Vehicle(FrameMember):
         # Publisher timers
         #self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
+        self.create_timer(10.0, self.publish_static_tfs)
+
+        # initialize optional transform for a fiducial correction endpoint
+        self.fid_t = TransformStamped()
+        self.fid_t.header = Header(frame_id=self.HOME_FRAME, stamp=self.get_clock().now().to_msg())
+        self.fid_t.child_frame_id = fiducial_offset_frame
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
@@ -196,6 +213,19 @@ class Vehicle(FrameMember):
         self.yaw_lock_commanded = bool(flags & FLAGS_YAW_LOCK)
         if new_flag:
             self.get_logger().info(f"~~~~~~~NEW Gimbal Flags~~~~~~~~\nRetract: {self.retract_commanded}\nNeutral: {self.neutral_position_commanded}\nRoll Lock: {self.roll_lock_commanded}\nPitch Lock: {self.pitch_lock_commanded}\nYaw Lock: {self.yaw_lock_commanded}")
+
+    def publish_static_tfs(self):
+        # timer cb to occasionaly publish static tfs for late joiners
+        # self.fid_t.header.stamp = self.get_clock().now().to_msg() # commenting out for data playback, maybe not needed
+        self.tf_static_broadcaster.sendTransform(self.fid_t)
+
+    def update_fiducial(self, msg: TransformStamped):
+        self.fid_t.transform.translation.x = msg.transform.translation.x
+        self.fid_t.transform.translation.y = msg.transform.translation.y
+        self.fid_t.transform.translation.z = msg.transform.translation.z
+        self.fid_t.header.stamp = self.get_clock().now().to_msg()
+        self.tf_static_broadcaster.sendTransform(self.fid_t)
+        self.get_logger().info(f"successfully updated fiducial transform")
 
     def update_alt(self, msg: Altitude):
         self.ALTITUDE=msg
