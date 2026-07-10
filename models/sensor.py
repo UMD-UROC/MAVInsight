@@ -72,14 +72,15 @@ class Sensor(FrameMember):
                     f"Error: {e}"
                 )
 
-            if sum(self.OFFSET) == 0.0:
-                self.OFFSET = []
-            elif len(self.OFFSET) == 3:
+            if len(self.OFFSET) == 3:
                 # append empty RPY values
                 self.OFFSET.append(0.0)
                 self.OFFSET.append(0.0)
                 self.OFFSET.append(0.0)
             elif len(self.OFFSET) == 6:
+                pass
+            elif len(self.OFFSET) == 0:
+                # no offset provided (or unparseable above); no static offset frame
                 pass
             else:
                 self.OFFSET = []
