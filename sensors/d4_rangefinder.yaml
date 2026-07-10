@@ -8,8 +8,8 @@
         - 0.0
         - 0.025
         - 0.0
-        - -1.5
-        - -2.0
+        - 0.0
+        - 0.0
         - 0.0
       range_topic: /uas4/gimbal_lidar_50m
       parent_frame: d4_gimbal_frame
