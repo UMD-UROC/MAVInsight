@@ -17,7 +17,7 @@
       home_position_topic: "/uas3/home_position/home"
       namespace: "/uas3/"
       location_topic: "/uas3/local_position/pose"
-      altitude_topic: "/uase/altitude"
+      altitude_topic: "/uas3/altitude"
       parent_frame: uas3_ekf_origin
       platform: quad
       velocity_topic: "uas3/local_position/velocity_local"
