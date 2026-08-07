@@ -196,6 +196,12 @@ class Vehicle(FrameMember):
         self.fid_t.header = Header(frame_id=self.HOME_FRAME, stamp=self.get_clock().now().to_msg())
         self.fid_t.child_frame_id = fiducial_offset_frame
 
+        # home -> ekf origin offset, kept static between the sparse home position
+        # updates (mavros can go minutes without republishing home_position/home,
+        # and a dynamic transform stamped only at those updates leaves the whole
+        # chain un-lookupable in between)
+        self.home_t = None
+
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
     def update_gimbal_flags(self, msg:GimbalManagerSetAttitude):
@@ -217,14 +223,19 @@ class Vehicle(FrameMember):
     def publish_static_tfs(self):
         # timer cb to occasionaly publish static tfs for late joiners
         # self.fid_t.header.stamp = self.get_clock().now().to_msg() # commenting out for data playback, maybe not needed
-        self.tf_static_broadcaster.sendTransform(self.fid_t)
+        self.tf_static_broadcaster.sendTransform(self._static_tfs())
+
+    def _static_tfs(self) -> list[TransformStamped]:
+        # sent together in one message: the static broadcaster latches with depth 1,
+        # so a late joiner only ever sees the last message sent
+        return [self.fid_t] + ([self.home_t] if self.home_t is not None else [])
 
     def update_fiducial(self, msg: TransformStamped):
         self.fid_t.transform.translation.x = msg.transform.translation.x
         self.fid_t.transform.translation.y = msg.transform.translation.y
         self.fid_t.transform.translation.z = msg.transform.translation.z
         self.fid_t.header.stamp = self.get_clock().now().to_msg()
-        self.tf_static_broadcaster.sendTransform(self.fid_t)
+        self.tf_static_broadcaster.sendTransform(self._static_tfs())
         self.get_logger().info(f"successfully updated fiducial transform")
 
     def update_alt(self, msg: Altitude):
@@ -365,11 +376,15 @@ class Vehicle(FrameMember):
             altitude=msg.geo.altitude
         )
         self.home_fix_pub.publish(home_fix)
-        self.tf_broadcaster.sendTransform(TransformStamped(
+        # broadcast as static: the offset is piecewise-constant between home
+        # updates, and a static transform stays valid for lookups at any stamp
+        # (same treatment as the fiducial offset above)
+        self.home_t = TransformStamped(
             header=Header(stamp=msg.header.stamp, frame_id=self.HOME_FRAME),
             child_frame_id=self.EKF_FRAME,
             transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
-        ))
+        )
+        self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
         (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
         self.ekf_fix_pub.publish(NavSatFix(
