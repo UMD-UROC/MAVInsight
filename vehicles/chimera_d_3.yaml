@@ -6,7 +6,6 @@
       ekf_origin_fix_topic: /uas3/ekf_origin/fix
       ekf_origin_frame: uas3_ekf_origin
       executable: vehicle
-      fiducial_offset_frame: d3_fiducial_offset
       fiducial_update_topic: /uas3/fiducial_update
       frame_name: d3_base_link
       gimbal_flags_topic: /uas3/gimbal_control/manager/set_attitude

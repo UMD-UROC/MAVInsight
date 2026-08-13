@@ -82,10 +82,10 @@ class Vehicle(FrameMember):
         else:
             raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin frame param not set. Unable to initialize Vehicle node.")
 
-        if self.has_parameter("fiducial_offset_frame"):
-            fiducial_offset_frame = self.get_parameter("fiducial_offset_frame").get_parameter_value().string_value
+        if self.has_parameter("fiducial_frame"):
+            fiducial_frame = self.get_parameter("fiducial_frame").get_parameter_value().string_value
         else:
-            fiducial_offset_frame = "fiducial_offset"
+            fiducial_frame = "fiducial"
 
         if self.has_parameter("fiducial_update_topic"):
             fiducial_update_topic = self.get_parameter("fiducial_update_topic").get_parameter_value().string_value
@@ -191,16 +191,20 @@ class Vehicle(FrameMember):
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
         self.create_timer(10.0, self.publish_static_tfs)
 
-        # initialize optional transform for a fiducial correction endpoint
+        # fiducial -> home: the shared fiducial frame parents every vehicle's home position
         self.fid_t = TransformStamped()
-        self.fid_t.header = Header(frame_id=self.HOME_FRAME, stamp=self.get_clock().now().to_msg())
-        self.fid_t.child_frame_id = fiducial_offset_frame
+        self.fid_t.header = Header(frame_id=fiducial_frame, stamp=self.get_clock().now().to_msg())
+        self.fid_t.child_frame_id = self.HOME_FRAME
 
         # home -> ekf origin offset, kept static between the sparse home position
         # updates (mavros can go minutes without republishing home_position/home,
         # and a dynamic transform stamped only at those updates leaves the whole
         # chain un-lookupable in between)
         self.home_t = None
+
+        # seed the tree with the fiducial frame now rather than at the first 10s
+        # timer tick -- consumers expect it to be present from startup
+        self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
@@ -231,9 +235,12 @@ class Vehicle(FrameMember):
         return [self.fid_t] + ([self.home_t] if self.home_t is not None else [])
 
     def update_fiducial(self, msg: TransformStamped):
-        self.fid_t.transform.translation.x = msg.transform.translation.x
-        self.fid_t.transform.translation.y = msg.transform.translation.y
-        self.fid_t.transform.translation.z = msg.transform.translation.z
+        # the update carries the measured localization error as an offset from home
+        # (home -> corrected). Our edge runs the other way, fiducial -> home, so the
+        # translation is negated. Corrections are translation-only, rotation stays identity
+        self.fid_t.transform.translation.x = -msg.transform.translation.x
+        self.fid_t.transform.translation.y = -msg.transform.translation.y
+        self.fid_t.transform.translation.z = -msg.transform.translation.z
         self.fid_t.header.stamp = self.get_clock().now().to_msg()
         self.tf_static_broadcaster.sendTransform(self._static_tfs())
         self.get_logger().info(f"successfully updated fiducial transform")
