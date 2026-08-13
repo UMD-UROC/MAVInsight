@@ -21,7 +21,7 @@ from tf2_ros import Buffer, TransformListener
 
 # MAVInsight imports
 from models.frame_member import FrameMember
-from models.frame_utils import euler_2_quat, frd_2_flu, frd_ned_2_flu_enu
+from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu_enu, rot_2_quat
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
@@ -51,11 +51,14 @@ class Sensor(FrameMember):
     OFFSET: list[float]
     SENSOR_TYPE: SensorTypes
     SENSORS: list[str]
+    static_tfs: list[TransformStamped]
 
     # constructors
     def __init__(self):
         super().__init__()
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Sensor params...")
+
+        self.static_tfs = []
 
         # ingest ROS parameters
         # notify user when defaults are being used
@@ -118,18 +121,25 @@ class Sensor(FrameMember):
             tf_out = Transform(translation=pos_out, rotation=rot_out)
 
             # build tf
-            self.s_t = TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
-
-            # start up timer to periodically publish this static frame for late-joiners
-            self.create_timer(10.0, self.broadcast_static)
+            self.static_tfs.append(
+                TransformStamped(header=head_out, child_frame_id=static_frame_name, transform=tf_out)
+            )
 
             # allow sub-members to attach to this new offset frame
             self.PARENT_FRAME = static_frame_name
 
+        # periodically re-broadcast every static tf for late joiners. created unconditionally
+        # so subclasses that add static tfs without an offset still get published
+        self.create_timer(10.0, self.broadcast_static)
+
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Sensor initialized!")
 
     def broadcast_static(self):
-        self.tf_static_broadcaster.sendTransform(self.s_t)
+        # sent together in one message: the static broadcaster latches with depth 1, so a
+        # late joiner only ever sees the last message sent
+        if not self.static_tfs:
+            return
+        self.tf_static_broadcaster.sendTransform(self.static_tfs)
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t1 = self._tab_char * tab_depth
@@ -158,6 +168,7 @@ class Camera(Sensor):
     """
 
     CAM_INFO_TOPIC: Optional[str]
+    OPTICAL_FRAME_NAME: str
 
     # constructors
     def __init__(self):
@@ -171,6 +182,17 @@ class Camera(Sensor):
         else:
             self.default_parameter_warning("cam_info_topic")
             self.CAM_INFO_TOPIC = "camera_info"
+
+        # optical frame (x right, y down, z forward) hung off the camera's FLU frame.
+        self.OPTICAL_FRAME_NAME = f"{self.FRAME_NAME}_optical"
+        self.static_tfs.append(TransformStamped(
+            header=Header(stamp=self.get_clock().now().to_msg(), frame_id=self.PARENT_FRAME),
+            child_frame_id=self.OPTICAL_FRAME_NAME,
+            transform=Transform(rotation=rot_2_quat(R_cam_flu)),
+        ))
+        self.get_logger().info(
+            f"Publishing optical-convention frame: {self.PARENT_FRAME} -> {self.OPTICAL_FRAME_NAME}"
+        )
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Camera initialized!")
 

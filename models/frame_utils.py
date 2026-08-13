@@ -29,6 +29,15 @@ R_cam_frd = R.from_matrix(np.array([
     [0, 1, 0],
 ]))
 
+# camera-optical (x right, y down, z forward) -> FLU body, composed so the bridged conventions
+# bridges stay visible: optical -> FRD -> FLU. Matrix [[0,0,1],[-1,0,0],[0,-1,0]];
+# xyz-extrinsic RPY (-90, 0, -90) deg; quat xyzw (0.5, -0.5, 0.5, -0.5).
+R_cam_flu = R_frd_flu * R_cam_frd
+
+def rot_2_quat(r: R) -> Quaternion:
+    r_x, r_y, r_z, r_w = r.as_quat()
+    return Quaternion(x=float(r_x), y=float(r_y), z=float(r_z), w=float(r_w))
+
 def frd_2_flu(input):
     if isinstance(input, Quaternion):
         r = R.from_quat([input.x, input.y, input.z, input.w])
@@ -69,6 +78,4 @@ def enu_2_lla(ref: NavSatFix, e, n, u):
     )
 
 def euler_2_quat(x:float, y:float, z:float, deg:bool=True):
-    R_in = R.from_euler('xyz', [x, y, z], degrees=deg)
-    r_x, r_y, r_z, r_w = R_in.as_quat()
-    return Quaternion(x=r_x, y=r_y, z=r_z, w=r_w)
+    return rot_2_quat(R.from_euler('xyz', [x, y, z], degrees=deg))
