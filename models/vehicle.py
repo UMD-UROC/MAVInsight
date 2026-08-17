@@ -8,7 +8,6 @@ from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
 from mavros_msgs.msg import Altitude, HomePosition, GimbalManagerSetAttitude
 # from nav_msgs.msg import Path
-from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
@@ -24,6 +23,18 @@ FLAGS_NEUTRAL = 2
 FLAGS_ROLL_LOCK = 4
 FLAGS_PITCH_LOCK = 8
 FLAGS_YAW_LOCK = 16
+
+
+def vehicle_odometry():
+    """The uORB odometry message, imported only by a vehicle that reports it.
+
+    px4_msgs is a large package to build, and only a vehicle whose
+    message_schema is px4_msgs ever reads one. Everything else speaks mavros
+    and must not need it in the workspace at all.
+    """
+    from px4_msgs.msg import VehicleOdometry  # type:ignore
+    return VehicleOdometry
+
 
 class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -141,7 +152,7 @@ class Vehicle(FrameMember):
         if self.has_parameter("message_schema"):
             msg_schema_str = self.get_parameter("message_schema").get_parameter_value().string_value
             if msg_schema_str.lower() == "px4_msgs":
-                self.LOCATION_MSG_TYPE = VehicleOdometry
+                self.LOCATION_MSG_TYPE = vehicle_odometry()
             else:
                 self.LOCATION_MSG_TYPE = PoseStamped
         else:
@@ -251,7 +262,7 @@ class Vehicle(FrameMember):
     def update_velocity(self, msg: TwistStamped):
         self.VELOCITY=msg
 
-    def publish_position(self, msg: PoseStamped | VehicleOdometry):
+    def publish_position(self, msg):
         # header
         # TODO: double check time sync between message schemas
         head_out = Header(frame_id=self.PARENT_FRAME)
@@ -259,8 +270,7 @@ class Vehicle(FrameMember):
         #path_update = PoseStamped()
 
         # transform
-        if self.LOCATION_MSG_TYPE == VehicleOdometry:
-            assert isinstance(msg, VehicleOdometry)
+        if self.LOCATION_MSG_TYPE is not PoseStamped:
             # TODO: Header needs the timestamp from the PX4 Message. Include when uXRCE is introduced.
             pos_in = msg.position
 

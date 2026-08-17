@@ -7,6 +7,31 @@
   <maintainer email="cdenihan@proton.me">cdenihan</maintainer>
   <license>Apache-2.0</license>
 
+  <!-- Message interfaces the frame publishers read and write -->
+  <depend>geometry_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+
+  <!-- ROS client and runtime libraries -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>tf2_geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+
+  <!-- Third-party Python -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pymap3d</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <!-- px4_msgs is imported only by a vehicle or gimbal whose message_schema
+       is px4_msgs, so it is not required to build or run this package. -->
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

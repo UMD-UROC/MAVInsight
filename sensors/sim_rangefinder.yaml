@@ -1,0 +1,19 @@
+# The gimbal-boresight laser. The simulated airframe carries no such MAVLink
+# sensor: px4-sim-stack measures the gimbal ray against the scene and
+# publishes this topic, so the frame and the reading are the aircraft's.
+/**/*:
+  sim_rangefinder:
+    ros__parameters:
+      display_name: Rangefinder (Gimbal, sim1)
+      executable: rangefinder
+      frame_name: sim_rangefinder_frame
+      offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+      range_topic: /sim1/gimbal_lidar_50m
+      parent_frame: sim_gimbal_frame
+      sensor_type: rangefinder

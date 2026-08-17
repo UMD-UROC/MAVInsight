@@ -7,7 +7,6 @@ from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 import mavros_msgs.msg
-import px4_msgs.msg
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
@@ -269,6 +268,9 @@ class Gimbal(Sensor):
         # initialize subscribers
         match self.msg_schema:
             case "px4_msgs":
+                # Imported here, not at module scope: px4_msgs is a large
+                # package and only a uORB gimbal needs it in the workspace.
+                import px4_msgs.msg
                 attitude_msg_type = px4_msgs.msg.GimbalDeviceAttitudeStatus
                 body_msg_type = px4_msgs.msg.VehicleOdometry
             case "mavros":

@@ -1,0 +1,23 @@
+# The PX4 gimbal model on the simulated airframe. Offset is where the mount
+# bolts to the body, from the model: 0.10 m above base_link.
+/**/*:
+  sim_gimbal:
+    ros__parameters:
+      display_name: 3-Axis Gimbal (sim1)
+      executable: gimbal
+      frame_name: sim_gimbal_frame
+      offset:
+        - 0.0
+        - 0.0
+        - 0.10
+        - 0.0
+        - 0.0
+        - 0.0
+      msg_schema: mavros
+      orientation_topic: /sim1/gimbal_control/device/attitude_status
+      command_topic: /sim1/gimbal_control/manager/set_attitude
+      parent_frame: sim_base_link
+      sensor_type: gimbal
+      sensors:
+        - sim_rangefinder.yaml
+        - sim_cam.yaml

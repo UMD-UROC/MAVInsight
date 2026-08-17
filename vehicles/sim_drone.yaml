@@ -1,0 +1,45 @@
+# The simulated airframe px4-sim-stack flies, under namespace sim1.
+#
+# The same shape as chimera_d_4.yaml: every topic is a mavros topic, so the
+# tree this builds is the one tf_loc localizes through whether the MAVLink
+# came from a radio or from the simulator's mavlink hub.
+#
+#   sim1_fiducial_offset -> sim1_home_position -> sim1_ekf_origin
+#     -> sim_base_link -> sim_gimbal_frame_offset -> sim_gimbal_frame_ref
+#       -> sim_gimbal_frame -> sim_rangefinder_frame
+#                           -> sim_cam_offset -> sim_cam_optical
+/**/*:
+  sim_drone:
+    ros__parameters:
+      display_name: PX4 SITL (sim1)
+      executable: vehicle
+      platform: quad
+      pose_frame: enu_flu
+
+      frame_name: sim_base_link
+      parent_frame: sim1_ekf_origin
+      namespace: "/sim1/"
+
+      ekf_origin_fix_topic: /sim1/ekf_origin/fix
+      ekf_origin_frame: sim1_ekf_origin
+      home_fix_topic: "/sim1/home_position/fix"
+      home_frame_name: "sim1_home_position"
+      home_position_topic: "/sim1/home_position/home"
+
+      # Named explicitly so the frame tf_loc measures against for an
+      # ordinary detection is one this node publishes. The simulator has no
+      # surveyed marker, so the correction sits at the identity until
+      # something sends one.
+      fiducial_frame: sim1_fiducial_offset
+      fiducial_update_topic: /sim1/fiducial_update
+
+      altitude_topic: "/sim1/altitude"
+      location_topic: "/sim1/local_position/pose"
+      velocity_topic: "/sim1/local_position/velocity_local"
+
+      gimbal_flags_topic: /sim1/gimbal_control/manager/set_attitude
+      gimbal_offset_frame: sim_gimbal_frame_offset
+      gimbal_ref_frame: sim_gimbal_frame_ref
+
+      sensors:
+        - sim_gimbal.yaml

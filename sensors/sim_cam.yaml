@@ -1,0 +1,18 @@
+# The gimbal camera. Its calibration comes from the simulated sensor itself,
+# published by px4-sim-stack rather than by a cam_info node.
+/**/*:
+  sim_cam:
+    ros__parameters:
+      display_name: RGB Camera (sim1)
+      executable: camera
+      frame_name: sim_cam
+      offset:
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+      cam_info_topic: /sim1/camera/camera_info
+      parent_frame: sim_gimbal_frame
+      sensor_type: camera
