@@ -235,15 +235,41 @@ class Vehicle(FrameMember):
         return [self.fid_t] + ([self.home_t] if self.home_t is not None else [])
 
     def update_fiducial(self, msg: TransformStamped):
-        # the update carries the measured localization error as an offset from home
-        # (home -> corrected). Our edge runs the other way, fiducial -> home, so the
-        # translation is negated. Corrections are translation-only, rotation stays identity
-        self.fid_t.transform.translation.x = -msg.transform.translation.x
-        self.fid_t.transform.translation.y = -msg.transform.translation.y
-        self.fid_t.transform.translation.z = -msg.transform.translation.z
+        """`fiducial_update` IS this vehicle's fiducial -> home edge, applied verbatim.
+
+        The translation is the correction E = surveyed - measured: a point sitting at `p` in
+        the raw home frame belongs at `p + E` in the fiducial frame. tf_loc publishes exactly
+        that, so there is no sign flip here -- the header and the payload agree, and the edge
+        can be read straight off the wire.
+
+        Rotation is ignored; corrections are translation-only.
+        """
+        if msg.header.frame_id != self.fid_t.header.frame_id or msg.child_frame_id != self.HOME_FRAME:
+            self.get_logger().warn(
+                f"ignoring fiducial_update for {msg.header.frame_id} -> {msg.child_frame_id}; "
+                f"this vehicle publishes {self.fid_t.header.frame_id} -> {self.HOME_FRAME}"
+            )
+            return
+
+        old, new = self.fid_t.transform.translation, msg.transform.translation
+        # tf_loc re-asserts the standing correction on a timer so the edge survives a restart
+        # here, so most updates carry a value we already hold. Re-broadcast regardless (that is
+        # the point of the re-assert), but only log when the correction actually moved --
+        # otherwise this is a log line every republish period, forever.
+        changed = max(abs(new.x - old.x), abs(new.y - old.y), abs(new.z - old.z)) > 1e-6
+
+        self.fid_t.transform.translation.x = new.x
+        self.fid_t.transform.translation.y = new.y
+        self.fid_t.transform.translation.z = new.z
         self.fid_t.header.stamp = self.get_clock().now().to_msg()
         self.tf_static_broadcaster.sendTransform(self._static_tfs())
-        self.get_logger().info(f"successfully updated fiducial transform")
+
+        if changed:
+            self.get_logger().info(
+                f"updated fiducial transform: ({new.x:+.2f}, {new.y:+.2f}, {new.z:+.2f})m"
+            )
+        else:
+            self.get_logger().debug("fiducial transform re-asserted (unchanged)")
 
     def update_alt(self, msg: Altitude):
         self.ALTITUDE=msg

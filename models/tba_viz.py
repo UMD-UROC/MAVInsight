@@ -134,46 +134,53 @@ class TBA_Viz(GraphMember):
         gimbal_plane_fixes = []
         altimeter_plane_fixes = []
 
+        # Un-project each fix back into the frame the TBA was measured in: the offset from the
+        # drone's own fix, plus the drone's pose in that frame. The fiducial correction rides
+        # on BOTH the target fix and uav_gps_location, so it cancels here and the marker lands
+        # at raw origin-frame coordinates -- which is what LOC_FRAME names. The correction is
+        # then applied exactly once, by the fiducial -> home edge, at render time.
+        #
+        # ignore_alt must stay False on all three: the default (True) substitutes the
+        # reference's altitude for the target's, which zeroes u and pins the marker to the
+        # drone's own altitude instead of the ground.
         for box in msg.uav_target_boxes:
             assert(isinstance(box, TargetBox))
-            if box.target_location_altimeter_plane:
-                loc: NavSatFix = box.target_location_altimeter_plane
+            drone_p = msg.uav_local_pose.pose.pose.position
+
+            for fix, sink in (
+                (box.target_location_altimeter_plane, altimeter_plane_fixes),
+                (box.target_location_gimbal_plane, gimbal_plane_fixes),
+                (box.target_location_rangefinder, rangefinder_fixes),
+            ):
+                # a ROS message is always truthy, so an unfilled fix has to be spotted by its
+                # zero stamp -- the same sentinel img_processing.publish_as_observation uses.
+                # Without this, an unpopulated field is projected from lat/lon (0, 0).
+                if fix.header.stamp.sec == 0:
+                    continue
+                loc: NavSatFix = fix
                 e, n, u = lla_2_enu(msg.uav_gps_location, loc, ignore_alt=False)
-                e += msg.uav_local_pose.pose.pose.position.x
-                n += msg.uav_local_pose.pose.pose.position.y
-                u += msg.uav_local_pose.pose.pose.position.z
-                altimeter_plane_fixes.append((e, n, u))
+                sink.append((e + drone_p.x, n + drone_p.y, u + drone_p.z))
 
-            if box.target_location_gimbal_plane:
-                loc: NavSatFix = box.target_location_gimbal_plane
-                e, n, u = lla_2_enu(msg.uav_gps_location, loc)
-                e += msg.uav_local_pose.pose.pose.position.x
-                n += msg.uav_local_pose.pose.pose.position.y
-                u += msg.uav_local_pose.pose.pose.position.z
-                gimbal_plane_fixes.append((e, n, u))
-
-            if box.target_location_rangefinder:
-                loc: NavSatFix = box.target_location_rangefinder
-                e, n, u = lla_2_enu(msg.uav_gps_location, loc)
-                e += msg.uav_local_pose.pose.pose.position.x
-                n += msg.uav_local_pose.pose.pose.position.y
-                u += msg.uav_local_pose.pose.pose.position.z
-                rangefinder_fixes.append((e, n, u))
-
-        rangefinder_points = [Point(x=e, y=n, z=u) for e, n, u in rangefinder_fixes]
-        gimbal_plane_points = [Point(x=e, y=n, z=u) for e, n, u in gimbal_plane_fixes]
-        altimeter_plane_points = [Point(x=e, y=n, z=u) for e, n, u in altimeter_plane_fixes]
-
-        markers.append(Marker(
-            header=Header(frame_id=self.LOC_FRAME),
-            ns="alt_plane_last",
-            id=0,
-            type=Marker.SPHERE_LIST,
-            action=Marker.ADD,
-            points=altimeter_plane_points,
-            scale=Vector3(x=0.25, y=0.25, z=0.25),
-            color=self.color_profile
-        ))
+        # one marker per localization mode, each in its own namespace so they can be toggled
+        # independently -- the gimbal-plane and rangefinder fixes used to be computed here and
+        # then dropped on the floor
+        for ns, fixes in (
+            ("alt_plane_last", altimeter_plane_fixes),
+            ("gimbal_plane_last", gimbal_plane_fixes),
+            ("rangefinder_last", rangefinder_fixes),
+        ):
+            if not fixes:
+                continue
+            markers.append(Marker(
+                header=Header(frame_id=self.LOC_FRAME),
+                ns=ns,
+                id=0,
+                type=Marker.SPHERE_LIST,
+                action=Marker.ADD,
+                points=[Point(x=e, y=n, z=u) for e, n, u in fixes],
+                scale=Vector3(x=0.25, y=0.25, z=0.25),
+                color=self.color_profile
+            ))
 
         self.latest_pub.publish(MarkerArray(markers=markers))
         self.get_logger().debug("Published latest")
