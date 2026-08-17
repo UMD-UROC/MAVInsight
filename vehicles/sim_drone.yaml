@@ -8,6 +8,7 @@
 #     -> sim_base_link -> sim_gimbal_frame_offset -> sim_gimbal_frame_ref
 #       -> sim_gimbal_frame -> sim_rangefinder_frame
 #                           -> sim_cam_offset -> sim_cam_optical
+#     -> sim_pilot_cam_offset -> sim_pilot_cam_optical
 /**/*:
   sim_drone:
     ros__parameters:
@@ -43,3 +44,4 @@
 
       sensors:
         - sim_gimbal.yaml
+        - sim_pilot_cam.yaml

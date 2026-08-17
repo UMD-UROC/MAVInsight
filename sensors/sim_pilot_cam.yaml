@@ -1,0 +1,19 @@
+# The fixed downward camera. Bolted to the body and pitched a quarter turn
+# down, from modules/sim/scenes/models/x500_recon/model.sdf, so its view does
+# not move with the gimbal and its calibration never changes.
+/**/*:
+  sim_pilot_cam:
+    ros__parameters:
+      display_name: Downward Camera (sim1)
+      executable: camera
+      frame_name: sim_pilot_cam
+      offset:
+        - 0.10
+        - 0.0
+        - -0.06
+        - 0.0
+        - 1.5707
+        - 0.0
+      cam_info_topic: /sim1/ground/pilot/camera_info
+      parent_frame: sim_base_link
+      sensor_type: camera
