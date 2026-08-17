@@ -14,6 +14,11 @@
         - 0.0
         - 0.0
       msg_schema: mavros
+      # PX4 reports the gimbal attitude earth referenced, in the aerospace
+      # convention. Read as a vehicle relative rotation it lands ninety
+      # degrees out in yaw, which is the NED to ENU difference.
+      attitude_reference: earth
+      attitude_origin_frame: sim1_ekf_origin
       orientation_topic: /sim1/gimbal_control/device/attitude_status
       command_topic: /sim1/gimbal_control/manager/set_attitude
       parent_frame: sim_base_link

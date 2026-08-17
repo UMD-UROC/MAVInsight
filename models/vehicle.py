@@ -1,6 +1,8 @@
 # python imports
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
@@ -350,8 +352,10 @@ class Vehicle(FrameMember):
         g_ref.transform.rotation = q_body_ref
         self.tf_broadcaster.sendTransform(g_ref)
 
-        # Publish altimeter plane viz. investigation only, not required
-        if self.ALTITUDE:
+        # Publish altimeter plane viz. investigation only, not required.
+        # An autopilot with no range sensor reports bottom_clearance as NaN,
+        # and tf2 rejects the whole transform and logs it on every message.
+        if self.ALTITUDE and math.isfinite(self.ALTITUDE.bottom_clearance):
             alt_t = Transform(translation=tf_out.translation)
             # I believe this bottom clearance represents the altimeter plane we should be seeking.
             # altitude.local seems to publish the drone height consistent with reality (observing the rangefinder point)

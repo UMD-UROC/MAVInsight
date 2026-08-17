@@ -20,7 +20,8 @@ from tf2_ros import Buffer, TransformListener
 
 # MAVInsight imports
 from models.frame_member import FrameMember
-from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu_enu, rot_2_quat
+from models.frame_utils import (R_cam_flu, R_frd_flu, R_ned_enu, euler_2_quat,
+                                frd_2_flu, rot_2_quat)
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
@@ -259,6 +260,28 @@ class Gimbal(Sensor):
             self.COMMAND_TOPIC = "command_topic"
 
         # body orientation topic TODO: Rename. Gimbal may not always be mounted to body...
+        # What the device's attitude report is measured against. "vehicle"
+        # takes it as a rotation of the mount, which is only an axis swap.
+        # "earth" takes it as an absolute attitude in the aerospace
+        # convention, NED reference and FRD body, which is what PX4 sends:
+        # converting that as if it were relative leaves the frame ninety
+        # degrees out in yaw, because the NED to ENU change is missing.
+        if self.has_parameter("attitude_reference"):
+            self.ATTITUDE_REFERENCE = self.get_parameter(
+                "attitude_reference").get_parameter_value().string_value.lower()
+        else:
+            self.default_parameter_warning("attitude_reference")
+            self.ATTITUDE_REFERENCE = "vehicle"
+
+        # The frame an earth referenced report is absolute in. The reference
+        # frame the report is published under carries the vehicle heading, so
+        # that heading has to come back out of an absolute attitude.
+        if self.has_parameter("attitude_origin_frame"):
+            self.ATTITUDE_ORIGIN_FRAME = self.get_parameter(
+                "attitude_origin_frame").get_parameter_value().string_value
+        else:
+            self.ATTITUDE_ORIGIN_FRAME = ""
+
         if self.has_parameter("body_orientation_topic"):
             self.BODY_TOPIC = self.get_parameter("body_orientation_topic").get_parameter_value().string_value
         else:
@@ -306,8 +329,10 @@ class Gimbal(Sensor):
         # maintaining any reference frames that later, lower-rate sensors use.
 
         # construct gimbal attitude frame
-        R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
-        R_ref_g = frd_2_flu(R_ref_g_FRD)
+        R_report = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
+        R_ref_g = self.attitude_in_reference_frame(R_report)
+        if R_ref_g is None:
+            return
         (g_x, g_y, g_z, g_w) = R_ref_g.as_quat() # type: ignore
         q_ref_g_FLU = Quaternion(x=g_x, y=g_y, z=g_z, w=g_w)
 
@@ -318,6 +343,43 @@ class Gimbal(Sensor):
             transform = Transform(rotation=q_ref_g_FLU)
         )
         self.tf_broadcaster.sendTransform(gimbal_tf)
+
+    def attitude_in_reference_frame(self, report: R) -> Optional[R]:
+        """The device report as a rotation of the reference frame.
+
+        A vehicle referenced report needs only the axis swap. An earth
+        referenced one is absolute, so it converts NED and FRD into ENU and
+        FLU together, and then the reference frame's own rotation divides
+        out of it -- that frame carries the vehicle heading, and the report
+        already includes it.
+        """
+        if self.ATTITUDE_REFERENCE != "earth":
+            return frd_2_flu(report)
+
+        # NED reference and FRD body into ENU and FLU, both at once. Written
+        # out rather than through frd_ned_2_flu_enu, whose two branches carry
+        # two different conventions.
+        world_gimbal = R_ned_enu * report * R_frd_flu
+        if not self.ATTITUDE_ORIGIN_FRAME:
+            return world_gimbal
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.ATTITUDE_ORIGIN_FRAME, self.GIMBAL_REF_FRAME_NAME, Time())
+        except Exception as exc:  # the tree is not up yet, or has gone stale
+            self.log_missing_reference(exc)
+            return None
+        r = tf.transform.rotation
+        return R.from_quat([r.x, r.y, r.z, r.w]).inv() * world_gimbal
+
+    def log_missing_reference(self, exc) -> None:
+        now = self.get_clock().now()
+        if getattr(self, "_reference_warned", None) is None or \
+                (now - self._reference_warned) > Duration(seconds=10):
+            self._reference_warned = now
+            self.get_logger().warn(
+                f"no {self.ATTITUDE_ORIGIN_FRAME} -> {self.GIMBAL_REF_FRAME_NAME} "
+                f"transform, so an earth referenced gimbal report cannot be "
+                f"placed: {exc}")
 
     def update_commanded_state(self, msg: mavros_msgs.msg.GimbalManagerSetAttitude):
         # TODO: Change this to a marker. I don't think we need a whole frame for the commanded attitude.
