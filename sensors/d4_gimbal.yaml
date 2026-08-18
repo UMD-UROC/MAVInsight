@@ -1,5 +1,5 @@
 /**/*:
-  two_axis_gimbal:
+  d4_gimbal:
     ros__parameters:
       display_name: 2-Axis Gimbal (D4)
       executable: gimbal
@@ -11,8 +11,8 @@
       coord_frame: ned-frd
       orientation_topic: /uas4/gimbal_control/device/attitude_status
       command_topic: /uas4/gimbal_control/manager/set_attitude
-      body_orientation_topic: /uas4/global_position/local
       parent_frame: d4_base_link
       sensor_type: gimbal
       sensors:
-        - rangefinder.yaml
+        - d4_rangefinder.yaml
+        - narrow_cam.yaml

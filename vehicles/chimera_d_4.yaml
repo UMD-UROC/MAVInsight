@@ -6,7 +6,11 @@
       ekf_origin_fix_topic: /uas4/ekf_origin/fix
       ekf_origin_frame: uas4_ekf_origin
       executable: vehicle
+      fiducial_update_topic: /uas4/fiducial_update
       frame_name: d4_base_link
+      gimbal_flags_topic: /uas4/gimbal_control/manager/set_attitude
+      gimbal_offset_frame: d4_gimbal_frame_offset
+      gimbal_ref_frame: d4_gimbal_frame_ref
       home_fix_topic: "/uas4/home_position/fix"
       home_frame_name: "uas4_home_position"
       home_position_topic: "/uas4/home_position/home"
@@ -17,6 +21,6 @@
       platform: quad
       velocity_topic: "uas4/local_position/velocity_local"
       sensors:
-        - two_axis_gimbal.yaml
+        - d4_gimbal.yaml
       viz:
         - uas4_tba.yaml

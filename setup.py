@@ -6,7 +6,10 @@ package_name = "mavinsight"
 runtime_resource_folder = f"share/{package_name}/package_resources"
 vehicle_configs = [f for f in glob(os.path.join("vehicles", "**/*"), recursive=True) if os.path.isfile(f)]
 sensor_configs = [f for f in glob(os.path.join("sensors", "**/*"), recursive=True) if os.path.isfile(f)]
-resource_configs = [f for f in glob(os.path.join("resource", "**/*"), recursive=True) if os.path.isfile(f)]
+resource_configs = [
+    f for f in glob(os.path.join("resource", "**/*"), recursive=True)
+    if os.path.isfile(f) and f != f"resource/{package_name}"
+]
 site_configs = [f for f in glob(os.path.join("sites", "**/**"), recursive=True) if os.path.isfile(f)]
 
 setup(

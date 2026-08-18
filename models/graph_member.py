@@ -3,6 +3,7 @@ import time
 
 # ROS2 imports
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
@@ -51,15 +52,6 @@ class GraphMember(Node):
         # initialize static broadcaster
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
 
-        # Wait for foxglove to subscribe to our topics
-        self.get_logger().info(f"Waiting for Foxglove...")
-        i = 0
-        while self.count_subscribers('/tf_static') == 0:
-            self.get_logger().info(f"...{i*5}sec")
-            i+=1
-            time.sleep(5.0)
-        self.get_logger().info(f"Foxglove found.")
-
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Graph Member initialized!")
 
     def default_parameter_warning(self, param_name: str):
@@ -77,8 +69,12 @@ class GraphMember(Node):
     def main(cls, args=None):
         rclpy.init(args=args)
         node = cls()
+
+        executor = MultiThreadedExecutor(num_threads=2)
+        executor.add_node(node)
+
         try:
-            rclpy.spin(node)
+            executor.spin()
         except KeyboardInterrupt:
             pass
         finally:

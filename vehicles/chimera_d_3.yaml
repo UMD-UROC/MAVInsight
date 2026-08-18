@@ -1,10 +1,24 @@
 /**/*:
   chimera_d_3:
     ros__parameters:
+      coord_frame: enu_flu
       display_name: Chimera D3
+      ekf_origin_fix_topic: /uas3/ekf_origin/fix
+      ekf_origin_frame: uas3_ekf_origin
       executable: vehicle
+      fiducial_update_topic: /uas3/fiducial_update
       frame_name: d3_base_link
+      gimbal_flags_topic: /uas3/gimbal_control/manager/set_attitude
+      gimbal_offset_frame: d3_gimbal_frame_offset
+      gimbal_ref_frame: d3_gimbal_frame_ref
+      home_fix_topic: "/uas3/home_position/fix"
+      home_frame_name: "uas3_home_position"
+      home_position_topic: "/uas3/home_position/home"
       namespace: "/uas3/"
-      location_topic: "/uas3/global_position/local"
-      parent_frame: map
+      location_topic: "/uas3/local_position/pose"
+      altitude_topic: "/uas3/altitude"
+      parent_frame: uas3_ekf_origin
       platform: quad
+      velocity_topic: "uas3/local_position/velocity_local"
+      sensors:
+        - d3_gimbal.yaml
