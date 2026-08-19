@@ -1,0 +1,50 @@
+# The Chimera airframe, as MAVInsight sees it.
+#
+# ${N} is the UAS number, and launch_sim.launch.py substitutes it, so one file
+# describes every vehicle. The airframe MODEL decides the sensor set. The UAS
+# NUMBER decides the identity. Camera calibration is neither: two vehicles of
+# one model carry different lenses, so it stays in the 5g_drone vehicle
+# parameter files.
+#
+# Frame tree, from px4-sim-stack/docs/uas-contract.md section 5.
+
+display_name: Chimera D${N}
+executable: vehicle
+platform: quad
+
+frame_name: d${N}_base_link
+parent_frame: uas${N}_ekf_origin
+pose_frame: enu_flu
+ekf_origin_frame: uas${N}_ekf_origin
+home_frame_name: uas${N}_home_position
+
+# The fiducial correction is the ROOT of the tree and its edge points down:
+# fiducial -> home_position. tf_loc looks up an ordinary detection through this
+# frame and a fiducial detection through home_position.
+fiducial_frame: d${N}_fiducial_offset
+
+# The gimbal publishes its attitude against a reference frame, but the VEHICLE
+# publishes that reference frame, because the body pose updates far more often
+# than the gimbal pose does. The code derives both names from the gimbal's own
+# frame_name, and nothing checks that these two agree with it.
+gimbal_offset_frame: d${N}_gimbal_frame_offset
+gimbal_ref_frame: d${N}_gimbal_frame_ref
+
+namespace: /uas${N}/
+altitude_topic: /uas${N}/altitude
+ekf_origin_fix_topic: /uas${N}/ekf_origin/fix
+fiducial_update_topic: /uas${N}/fiducial_update
+gimbal_flags_topic: /uas${N}/gimbal_control/device/attitude_status
+home_fix_topic: /uas${N}/home_position/fix
+home_position_topic: /uas${N}/home_position/home
+location_topic: /uas${N}/local_position/pose
+velocity_topic: /uas${N}/local_position/velocity_local
+
+# The sensor set, by model. Contract sections 3 and 5. The launch turns the
+# chosen list into this node's `sensors` parameter.
+models:
+  v2:
+    - gimbal.yaml
+  v3:
+    - gimbal.yaml
+    - down_camera.yaml

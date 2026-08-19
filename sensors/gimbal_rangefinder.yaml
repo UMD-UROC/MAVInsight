@@ -1,0 +1,12 @@
+# The gimbal laser. Its frame sits at the point the laser measures: the range
+# becomes the x translation of the transform this node publishes.
+
+display_name: Rangefinder (Gimbal, D${N})
+executable: rangefinder
+sensor_type: rangefinder
+
+frame_name: d${N}_rangefinder_frame
+parent_frame: d${N}_gimbal_frame
+offset: [0.0, 0.025, 0.0, 0.0, 0.0, 0.0]
+
+range_topic: /uas${N}/gimbal_lidar_50m

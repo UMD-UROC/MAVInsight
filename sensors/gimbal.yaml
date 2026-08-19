@@ -1,0 +1,22 @@
+# The 2 axis gimbal and everything it carries.
+#
+# It publishes d${N}_gimbal_frame_ref -> d${N}_gimbal_frame from the attitude
+# status. The x axis of d${N}_gimbal_frame points along the boresight.
+
+display_name: Gimbal (D${N})
+executable: gimbal
+sensor_type: gimbal
+msg_schema: mavros
+
+frame_name: d${N}_gimbal_frame
+parent_frame: d${N}_base_link
+# x y z roll pitch yaw. The rotation goes through euler_2_quat, which reads
+# DEGREES. It builds the static frame d${N}_gimbal_frame_offset.
+offset: [0.205, 0.0, -0.081, 0.0, 0.0, 0.0]
+
+orientation_topic: /uas${N}/gimbal_control/device/attitude_status
+command_topic: /uas${N}/gimbal_control/manager/set_attitude
+
+sensors:
+  - gimbal_rangefinder.yaml
+  - gimbal_rgb_camera.yaml

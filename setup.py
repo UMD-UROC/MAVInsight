@@ -43,7 +43,11 @@ setup(
             "gimbal = models.sensor:Gimbal.main",
             "rangefinder = models.sensor:Rangefinder.main",
             "site = models.site:Site.main",
-            "tba_viz = models.tba_viz:TBA_Viz.main"
+            "tba_viz = models.tba_viz:TBA_Viz.main",
+            "footprint_viz = models.footprint_viz:FootprintViz.main",
+            "scoring_viz = models.scoring_viz:ScoringViz.main",
+            "buildings_viz = models.buildings_viz:BuildingsViz.main",
+            "location_viz = models.location_viz:LocationViz.main"
         ],
     },
 )

@@ -1,0 +1,13 @@
+# The down facing camera. The v3 airframe carries one and the v2 does not.
+# Contract section 3.
+
+display_name: Down Facing Camera (D${N})
+executable: camera
+sensor_type: camera
+
+frame_name: d${N}_pilot
+parent_frame: d${N}_base_link
+# Pitch of 90 degrees turns the camera x axis from forward to down.
+offset: [0.10, 0.0, -0.06, 0.0, 90.0, 0.0]
+
+cam_info_topic: /uas${N}/dcam_info

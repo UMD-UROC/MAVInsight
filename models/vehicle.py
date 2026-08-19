@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
-from mavros_msgs.msg import Altitude, HomePosition, GimbalManagerSetAttitude
+from mavros_msgs.msg import Altitude, HomePosition, GimbalDeviceAttitudeStatus
 # from nav_msgs.msg import Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
@@ -174,11 +174,36 @@ class Vehicle(FrameMember):
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
 
-        # WIP: gimbal reference frame code
-        gimbal_flags_topic = self.get_parameter("gimbal_flags_topic").get_parameter_value().string_value
-        self.gimbal_offset_frame = self.get_parameter("gimbal_offset_frame").get_parameter_value().string_value
-        self.gimbal_ref_frame = self.get_parameter("gimbal_ref_frame").get_parameter_value().string_value
-        self.create_subscription(GimbalManagerSetAttitude, gimbal_flags_topic, self.update_gimbal_flags, viz_qos)
+        # The stabilization lock flags come from the gimbal's own report, not
+        # from the manager command that asked for them. MAVROS publishes
+        # `manager/set_attitude` outbound, so a ground station listening on the
+        # same MAVLink stream never sees it, while GIMBAL_DEVICE_ATTITUDE_STATUS
+        # already streams and carries the same RETRACT, NEUTRAL, ROLL_LOCK,
+        # PITCH_LOCK and YAW_LOCK bits. It also reports what the gimbal did
+        # rather than what was requested.
+
+        # Guarded like every other parameter here. A config that omits one of
+        # these used to raise in the constructor, which took the whole frame
+        # tree down before a single transform went out.
+        if self.has_parameter("gimbal_flags_topic"):
+            gimbal_flags_topic = self.get_parameter("gimbal_flags_topic").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("gimbal_flags_topic")
+            gimbal_flags_topic = "gimbal_control/device/attitude_status"
+
+        if self.has_parameter("gimbal_offset_frame"):
+            self.gimbal_offset_frame = self.get_parameter("gimbal_offset_frame").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("gimbal_offset_frame")
+            self.gimbal_offset_frame = "gimbal_frame_offset"
+
+        if self.has_parameter("gimbal_ref_frame"):
+            self.gimbal_ref_frame = self.get_parameter("gimbal_ref_frame").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("gimbal_ref_frame")
+            self.gimbal_ref_frame = "gimbal_frame_ref"
+
+        self.create_subscription(GimbalDeviceAttitudeStatus, gimbal_flags_topic, self.update_gimbal_flags, viz_qos)
         # initialize gimbal state variables
         self.retract_commanded = False
         self.neutral_position_commanded = False
@@ -208,7 +233,7 @@ class Vehicle(FrameMember):
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
-    def update_gimbal_flags(self, msg:GimbalManagerSetAttitude):
+    def update_gimbal_flags(self, msg: GimbalDeviceAttitudeStatus):
         flags = int(msg.flags)
         new_flag = False
         new_flag |= (self.retract_commanded ^ bool(flags & FLAGS_RETRACT))
