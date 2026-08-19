@@ -14,7 +14,7 @@ from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
 # MAVInsight imports
-from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
+from models.frame_utils import R_enu_nwu, enu_2_lla, frd_ned_2_flu_enu
 from models.frame_member import FrameMember
 from models.platforms import Platforms
 from models.qos_profiles import reliable_qos, viz_qos
@@ -376,8 +376,16 @@ class Vehicle(FrameMember):
             q = tf_out.rotation
             R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
             R_body_ref *= R_world_body.inv()
-            # if we don't have a yaw lock, re-insert the yaw of the drone
-            if not self.yaw_lock_commanded:
+            # A locked axis is measured against a level frame. The yaw lock picks
+            # which level frame: the earth frame, whose x axis points North, or the
+            # vehicle frame, whose x axis follows the airframe heading. MAVLink
+            # gives both in NED, so the x axis of the earth frame is North, which
+            # is 90 degrees from the x axis of this ENU tree. Drop that turn and a
+            # yaw-locked gimbal builds a camera frame 90 degrees off, on real
+            # hardware as much as in simulation.
+            if self.yaw_lock_commanded:
+                R_body_ref *= R_enu_nwu
+            else:
                 R_body_ref *= self.heading_only_frame(tf_out.rotation)
         (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
         q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)

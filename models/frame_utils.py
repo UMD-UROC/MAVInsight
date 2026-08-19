@@ -29,6 +29,13 @@ R_cam_frd = R.from_matrix(np.array([
     [0, 1, 0],
 ]))
 
+# The earth reference frame of a MAVLink gimbal report is NED. Its FLU-convention
+# counterpart is NWU (x North, y West, z Up), because a rotation that is already
+# relative to a body converts with the axis swap alone (see frd_2_flu). NWU sits
+# 90 degrees from ENU about up, and this rotation is that turn: it takes a vector
+# in NWU to the same vector in ENU.
+R_enu_nwu = R.from_euler('Z', 90, degrees=True)
+
 # camera-optical (x right, y down, z forward) -> FLU body, composed so the bridged conventions
 # bridges stay visible: optical -> FRD -> FLU. Matrix [[0,0,1],[-1,0,0],[0,-1,0]];
 # xyz-extrinsic RPY (-90, 0, -90) deg; quat xyzw (0.5, -0.5, 0.5, -0.5).
