@@ -336,6 +336,7 @@ class BuildingsViz(GraphMember):
         configured = param(self, "buildings_file", "")
         self.path = Path(configured) if configured else None
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
+        self.geoid_height = float(param(self, "geoid_height_m", 0.0))
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "buildings_viz_topic", "/viz/scene/buildings")
 
@@ -428,7 +429,7 @@ class BuildingsViz(GraphMember):
         # Where the scene centre sits in the reference frame. The same
         # translation umd_uas/terrain.py applies to reach the tile, so a roof
         # here stands on the surface a ray meets there.
-        offset = lla_2_enu(self.local_fix, as_fix(origin), ignore_alt=False)
+        offset = lla_2_enu(self.local_fix, self.scene_origin(origin), ignore_alt=False)
 
         stamp = self.get_clock().now().to_msg()
         corners = 0
@@ -450,6 +451,14 @@ class BuildingsViz(GraphMember):
             f"{self.path} in frame {self.REFERENCE_FRAME}, scene centre at "
             f"({offset[0]:+.1f}, {offset[1]:+.1f}, {offset[2]:+.1f}) m")
         return MarkerArray(markers=markers)
+
+    def scene_origin(self, origin) -> NavSatFix:
+        """The scene centre as a fix in the datum the vehicle reports. A scene
+        is anchored above mean sea level, because elevation data is, and a
+        NavSatFix is above the ellipsoid. The two are a geoid separation apart,
+        33 m in Maryland, which is the whole height of what is drawn."""
+        latitude, longitude, mean_sea_level = (float(v) for v in origin[:3])
+        return as_fix((latitude, longitude, mean_sea_level + self.geoid_height))
 
     def surface_marker(self, index, points, colors, stamp) -> Marker:
         """One building's floors. Triangles wind counter-clockwise, so every

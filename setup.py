@@ -47,6 +47,7 @@ setup(
             "footprint_viz = models.footprint_viz:FootprintViz.main",
             "scoring_viz = models.scoring_viz:ScoringViz.main",
             "buildings_viz = models.buildings_viz:BuildingsViz.main",
+            "terrain_viz = models.terrain_viz:TerrainViz.main",
             "location_viz = models.location_viz:LocationViz.main"
         ],
     },
