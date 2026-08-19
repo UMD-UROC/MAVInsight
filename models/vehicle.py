@@ -399,13 +399,13 @@ class Vehicle(FrameMember):
         g_ref.transform.rotation = q_body_ref
         self.tf_broadcaster.sendTransform(g_ref)
 
-        # Publish altimeter plane viz. investigation only, not required
-        if self.ALTITUDE:
+        # Publish altimeter plane viz. investigation only, not required.
+        # bottom_clearance is the height over whatever the rangefinder sees, and
+        # PX4 reports it as NaN whenever nothing is in range, which is most of a
+        # flight. Publishing that gives tf2 a NaN translation to reject at the
+        # transform rate, so the frame waits for a reading instead.
+        if self.ALTITUDE and np.isfinite(self.ALTITUDE.bottom_clearance):
             alt_t = Transform(translation=tf_out.translation)
-            # I believe this bottom clearance represents the altimeter plane we should be seeking.
-            # altitude.local seems to publish the drone height consistent with reality (observing the rangefinder point)
-            # altitude.relative seems to publish the drone height relative to the home position (not sure why this is inconsistent with reality)
-            # altitude.bottom_clearance : I'm assuming this would be consistent with the plane that the drone is hovering over.
             alt_t.translation.z -= self.ALTITUDE.bottom_clearance
             self.tf_broadcaster.sendTransform(TransformStamped(
                 header=head_out,
