@@ -299,14 +299,18 @@ def flat_image(color=DEFAULT_SURFACE_COLOR) -> bytes:
     return packed.getvalue()
 
 
-def scene_side(path) -> float:
+def scene_side(path):
     """How wide the scene's square is, out of the surface file that decides
-    it. The image over the roofs is mapped across that square, so this is the
-    same number the terrain is drawn with."""
+    it, or None where the file does not say.
+
+    The image over the roofs is mapped across that square, so this is the same
+    number the terrain is drawn with, and a roof mapped across the wrong width
+    slides off the ground it stands on.
+    """
     try:
         return float(json.loads(Path(path).read_text())["side_m"])
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
-        return DEFAULT_SCENE_SIDE_M
+        return None
 
 
 def satellite_uvs(points, side_m: float):
@@ -371,7 +375,15 @@ class BuildingsViz(GraphMember):
         texture = param(self, "terrain_texture_file", "")
         self.texture_path = Path(texture) if texture else None
         self.texture_px = int(param(self, "terrain_texture_px", 2048))
-        self.side_m = scene_side(param(self, "terrain_surface_file", ""))
+        surface = param(self, "terrain_surface_file", "")
+        self.side_m = scene_side(surface)
+        if self.side_m is None:
+            self.side_m = DEFAULT_SCENE_SIDE_M
+            self.get_logger().warn(
+                f"{surface or 'no surface file'} does not say how wide the "
+                f"scene is, so the image over the roofs is mapped across "
+                f"{DEFAULT_SCENE_SIDE_M:.0f} m. A scene of another width draws "
+                f"its roofs out of register with the ground under them.")
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "buildings_viz_topic", "/viz/scene/buildings")
 
