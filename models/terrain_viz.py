@@ -34,9 +34,25 @@ scene moves, so the bytes are held and only the pose goes out again.
 Nothing goes out before the first home fix. Terrain at the wrong offset looks
 correct and is wrong, which is worse than an empty panel.
 
+The mosaic the vehicle builds is drawn into this same image rather than laid
+over it. A raster the vehicle rectified against the same surface this mesh is
+cut from describes the same ground, so it belongs in the same picture: one
+surface, one depth, and "the map over the terrain" becomes a fact about the
+image instead of two sheets a hair apart fighting for the same pixel. The live
+view keeps its place on top, because `models/scene_ground.py` already draws
+this ground a ground clearance under the one the rays are cast at.
+
+The paste is one affine. The mesh carries a texture coordinate for every
+vertex, written from the imagery georeference, and one affine reproduces that
+mapping to under a twentieth of a texture pixel over both built scenes, so the
+mosaic's own lat/lon box lands on the image where the imagery already puts that
+ground.
+
 Subscribes
     <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
                             <reference_frame>
+    <mosaic_overlay_topic>  cdcl_umd_msgs/MosaicOverlay, the vehicle's map so
+                            far. Empty disables it.
 Publishes
     <terrain_viz_topic>     foxglove_msgs/SceneUpdate, latched
 """
@@ -56,13 +72,15 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 
 # ROS2 message imports
+from cdcl_umd_msgs.msg import MosaicOverlay
 from foxglove_msgs.msg import Color, ModelPrimitive, SceneEntity, SceneUpdate
 from geometry_msgs.msg import Quaternion, Vector3
 
 # MAVInsight imports
 from models import gltf
+from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
-from models.scene_ground import SceneGround
+from models.scene_ground import SceneGround, as_fix
 
 COLLADA = "{http://www.collada.org/2005/11/COLLADASchema}"
 ENTITY_ID = "scene_terrain"
@@ -74,6 +92,13 @@ RELOAD_CHECK_S = 5.0
 LATCHED_QOS = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                          history=HistoryPolicy.KEEP_LAST,
                          reliability=ReliabilityPolicy.RELIABLE)
+# The mosaic arrives on whatever durability the link gives it. A subscriber
+# that asked for a latched one would match a latched publisher and match
+# nothing else at all, which is a silent and total failure; this matches
+# either, and misses only a map published before this node came up.
+LIVE_QOS = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE,
+                      history=HistoryPolicy.KEEP_LAST,
+                      reliability=ReliabilityPolicy.RELIABLE)
 
 
 def param(node, name, default):
@@ -92,6 +117,55 @@ def float_array(root, ending):
             values = source.find(f"{COLLADA}float_array")
             return np.fromstring(values.text, sep=" ")
     raise ValueError(f"the mesh carries no {ending} array")
+
+
+def enu_to_uv_affine(positions, uvs):
+    """The mesh's own east and north to texture coordinate map, as one affine.
+
+    The mesh carries a texture coordinate per vertex, written from the imagery
+    georeference, so this is the map the picture is already registered by
+    rather than a stretch across the scene square. Fitted by least squares over
+    every vertex; the residual is under a twentieth of a texture pixel on both
+    built scenes, because a few hundred metres of web mercator is a plane.
+
+    Answers the 2x3 matrix that takes (1, east, north) to (u, v).
+    """
+    design = np.column_stack([np.ones(len(positions)), positions[:, 0],
+                              positions[:, 1]])
+    return np.linalg.lstsq(design, uvs, rcond=None)[0].T
+
+
+def texture_to_mosaic(affine, texture_size, mosaic_box, mosaic_size):
+    """The six numbers PIL warps the mosaic into the texture with.
+
+    PIL asks for the map from the output image back to the input, so this is
+    texture pixel to scene east and north through the mesh's own affine, then
+    east and north to mosaic pixel through the box the mosaic was exported
+    with. Both are affine, so the pair is one affine.
+
+    `mosaic_box` is (west, south, east, north) in scene metres, at the centres
+    of the mosaic's corner pixels, which is what its bounds name.
+    """
+    texture_w, texture_h = texture_size
+    mosaic_w, mosaic_h = mosaic_size
+    # Texture pixel to (u, v). v is measured up from the bottom of the image.
+    to_uv = np.array([[1.0 / texture_w, 0.0, 0.0],
+                      [0.0, -1.0 / texture_h, 1.0],
+                      [0.0, 0.0, 1.0]])
+    # East and north to (u, v) is the mesh's affine; turn it round.
+    to_uv_from_enu = np.array([[affine[0, 1], affine[0, 2], affine[0, 0]],
+                               [affine[1, 1], affine[1, 2], affine[1, 0]],
+                               [0.0, 0.0, 1.0]])
+    to_enu = np.linalg.inv(to_uv_from_enu)
+    # East and north to mosaic pixel. The mosaic is north up and west left,
+    # so its rows count south.
+    west, south, east, north = mosaic_box
+    across = (mosaic_w - 1) / (east - west)
+    down = (mosaic_h - 1) / (north - south)
+    to_pixel = np.array([[across, 0.0, -west * across],
+                         [0.0, -down, north * down],
+                         [0.0, 0.0, 1.0]])
+    return tuple((to_pixel @ to_enu @ to_uv)[:2].ravel())
 
 
 def grid_side(vertices: int) -> int:
@@ -127,6 +201,7 @@ class TerrainViz(GraphMember):
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "terrain_viz_topic", "/viz/scene/terrain")
+        mosaic_topic = param(self, "mosaic_overlay_topic", "")
 
         self.scene_pub = self.create_publisher(SceneUpdate, viz_topic, LATCHED_QOS)
         # The model as it was last built, and the mesh file it was built from.
@@ -138,6 +213,23 @@ class TerrainViz(GraphMember):
         # The mtime the held model was built from. No file has been read yet,
         # and an mtime never takes this value.
         self.model_stamp = 0
+        # The satellite image at the size it is drawn, and that size. Read
+        # once, so a map that changes costs a paste and an encode rather than
+        # a second read and resize of the whole raster.
+        self.base_image = None
+        self.base_px = 0
+        # The newest mosaic, and the one the held model was drawn with. A
+        # stamp identifies a map here; two maps of the same ground at the same
+        # moment are the same map.
+        self.mosaic = None
+        self.mosaic_drawn = None
+
+        if mosaic_topic:
+            self.create_subscription(MosaicOverlay, mosaic_topic,
+                                     self.mosaic_cb, LIVE_QOS)
+            self.get_logger().info(
+                f"[{self.DISPLAY_NAME}]: the vehicle's map is drawn into the "
+                f"terrain from {mosaic_topic}")
 
         if self.mesh_path is None or self.surface_path is None:
             self.ground = None
@@ -152,17 +244,25 @@ class TerrainViz(GraphMember):
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Terrain visualization initialized!")
 
+    def mosaic_cb(self, msg: MosaicOverlay) -> None:
+        """Hold the newest map. It is drawn in on the next tick, so a burst of
+        captures costs one rebuild rather than one for each."""
+        self.mosaic = msg
+
     def publish_when_changed(self) -> None:
-        """Draw the scene again when its mesh changes, and when the ground it
-        stands on moves under it. The mesh is read once for each change and
-        the ground is looked at every tick, because the ground moves far more
-        often than the scene is rebuilt."""
+        """Draw the scene again when its mesh changes, when the vehicle's map
+        changes, and when the ground it stands on moves under it. The mesh is
+        read once for each change and the ground is looked at every tick,
+        because the ground moves far more often than the scene is rebuilt."""
         try:
             stamp = self.mesh_path.stat().st_mtime_ns
         except OSError:
             stamp = None
-        if stamp != self.model_stamp:
+        mosaic_stamp = None if self.mosaic is None else (
+            self.mosaic.header.stamp.sec, self.mosaic.header.stamp.nanosec)
+        if stamp != self.model_stamp or mosaic_stamp != self.mosaic_drawn:
             self.model_stamp = stamp
+            self.mosaic_drawn = mosaic_stamp
             self.ground.drawn_at = None
             if stamp is None:
                 self.get_logger().info(
@@ -188,15 +288,110 @@ class TerrainViz(GraphMember):
         return (positions.reshape(side, side, 3)[::self.stride, ::self.stride],
                 uvs.reshape(side, side, 2)[::self.stride, ::self.stride])
 
-    def texture(self):
-        """The satellite image, no wider than asked for. A model carries its
-        image, so a scene's full raster would go out on every publish."""
-        image = Image.open(self.texture_path)
-        if max(image.size) > self.texture_px:
-            image.thumbnail((self.texture_px, self.texture_px))
+    def texture(self, positions, uvs):
+        """The image over the terrain, with the vehicle's map drawn into it.
+
+        The satellite raster is read once at the size it is drawn, because a
+        model carries its image and a scene's full raster would go out on
+        every publish. A mosaic goes over a copy of it, registered by the
+        mesh's own texture coordinates, so the map lands on the ground the
+        imagery already puts there and the two are one picture.
+
+        Answers the encoded image, its size and what to say about it.
+        """
+        wanted = self.image_px(positions)
+        if self.base_image is None or self.base_px != wanted:
+            image = Image.open(self.texture_path)
+            if max(image.size) != wanted:
+                scale = wanted / max(image.size)
+                image = image.resize((max(1, round(image.width * scale)),
+                                      max(1, round(image.height * scale))),
+                                     Image.BICUBIC)
+            self.base_image = image.convert("RGB")
+            self.base_px = wanted
+        image, note = self.base_image, ""
+        if self.mosaic is not None:
+            image, note = self.with_mosaic(self.base_image, positions, uvs)
         packed = io.BytesIO()
-        image.convert("RGB").save(packed, "JPEG", quality=88)
-        return packed.getvalue(), image.size
+        image.save(packed, "JPEG", quality=88)
+        return packed.getvalue(), image.size, note
+
+    def mosaic_box(self):
+        """The mosaic's corners in scene metres, west, south, east and north.
+
+        None where there is no mosaic yet, or where its corners do not make a
+        box. The mosaic names a latitude and longitude pair and the scene is
+        measured from its own centre, so the two meet here.
+        """
+        if self.mosaic is None or self.scene_origin_lla is None:
+            return None
+        anchor = as_fix((self.scene_origin_lla[0], self.scene_origin_lla[1], 0.0))
+        west, south, _ = lla_2_enu(
+            anchor, as_fix((self.mosaic.sw_lat, self.mosaic.sw_lon, 0.0)))
+        east, north, _ = lla_2_enu(
+            anchor, as_fix((self.mosaic.ne_lat, self.mosaic.ne_lon, 0.0)))
+        if not (east > west and north > south):
+            self.get_logger().warn(
+                f"the mosaic's corners do not make a box "
+                f"({west:.1f}..{east:.1f} east, {south:.1f}..{north:.1f} "
+                f"north), so it is not drawn", throttle_duration_sec=30.0)
+            return None
+        return (west, south, east, north)
+
+    def image_px(self, positions) -> int:
+        """How wide to draw the scene's image, in pixels.
+
+        Fine enough to hold the finest thing in it and no finer. With no
+        mosaic that is whatever the satellite raster holds. With one it is the
+        mosaic's own resolution, because a map drawn coarser than it was built
+        throws away the detail the operator asked for. `terrain_texture_px`
+        caps both: a model carries its image, so this is what the message
+        costs.
+        """
+        raster = max(Image.open(self.texture_path).size)
+        box = self.mosaic_box()
+        if box is not None and self.mosaic.width_px > 1:
+            per_px = (box[2] - box[0]) / (self.mosaic.width_px - 1)
+            side = float(np.max(positions[..., 0]) - np.min(positions[..., 0]))
+            if per_px > 0.0:
+                raster = max(raster, int(round(side / per_px)))
+        return min(self.texture_px, raster)
+
+    def with_mosaic(self, base, positions, uvs):
+        """A copy of the satellite image with the vehicle's map over it.
+
+        The map arrives as a PNG whose alpha is its coverage, and as the
+        latitude and longitude box it covers. Both corners are put in scene
+        coordinates and the map is warped through one affine into the image,
+        so nothing is resampled twice and nothing has to know the imagery's
+        own georeference.
+
+        Answers the base image unchanged, and says why, if the map cannot be
+        read or does not meet the scene.
+        """
+        box = self.mosaic_box()
+        if box is None:
+            return base, ""
+        try:
+            overlay = Image.open(io.BytesIO(bytes(self.mosaic.overlay_png.data)))
+        except (OSError, ValueError) as error:
+            self.get_logger().warn(f"cannot read the mosaic overlay: {error}",
+                                   throttle_duration_sec=30.0)
+            return base, ""
+        overlay = overlay.convert("RGBA")
+
+        west, south, east, north = box
+        coefficients = texture_to_mosaic(
+            enu_to_uv_affine(positions.reshape(-1, 3), uvs.reshape(-1, 2)),
+            base.size, box, overlay.size)
+        placed = overlay.transform(base.size, Image.AFFINE, coefficients,
+                                   resample=Image.BILINEAR)
+        drawn = base.copy()
+        drawn.paste(placed, (0, 0), placed)
+        covered = 100.0 * float(np.asarray(placed)[..., 3].astype(bool).mean())
+        return drawn, (f", the vehicle's map over {covered:.1f}% of it "
+                       f"({overlay.size[0]}x{overlay.size[1]} px, "
+                       f"{east - west:.0f}x{north - south:.0f} m)")
 
     def build_model(self) -> bool:
         """Read the mesh and its image and hold them as one textured model, in
@@ -222,7 +417,7 @@ class TerrainViz(GraphMember):
             indices = np.stack([upper_left, upper_right, lower_right,
                                 upper_left, lower_right, lower_left],
                                axis=-1).ravel()
-            image, size = self.texture()
+            image, size, mosaic_note = self.texture(positions, uvs)
             self.model_bytes = gltf.textured_mesh(
                 positions.reshape(-1, 3), uvs.reshape(-1, 2), indices, image,
                 "image/jpeg")
@@ -232,7 +427,7 @@ class TerrainViz(GraphMember):
             return False
         self.model_note = (f"{len(indices) // 3} triangles and a "
                            f"{size[0]}x{size[1]} image from "
-                           f"{self.mesh_path.name}, "
+                           f"{self.mesh_path.name}{mosaic_note}, "
                            f"{len(self.model_bytes) // 1024} kB")
         return True
 

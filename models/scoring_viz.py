@@ -18,9 +18,20 @@ bubble is a hit by construction.
 A target that is in view and that no estimate names is the false negative. It
 has no estimate to mark, so it appears as its bubble turning red.
 
+The verdicts draw the image boxes, and the localization does not. A verdict
+message names the frame it judged in its header stamp, so this node draws the
+boxes of that frame and colors each one with its own verdict: one message
+decides both views and they cannot disagree. Verdicts with nothing in them
+name no frame, which takes every box off the picture at that instant.
+
 Every view empties itself rather than freezing the last hit. A Map layer with
-nothing this tick goes out as an empty collection, and the image boxes come off
-the picture once the frame they were measured on is too old to be under them.
+nothing this tick goes out as an empty collection.
+
+The marker arrays go out on a clock rather than on arrival. A panel redraws
+a marker in a fixed frame from the transform tree on every panel frame, so
+this rate carries a change of verdict to the operator rather than the
+geometry. A tick only restamps arrays the node already holds, so the rate is
+nearly free: see the tunables.
 
 Subscribes
     <verdicts_topic>        vision_msgs/Detection3DArray
@@ -40,6 +51,8 @@ Publishes
 # python imports
 import json
 import math
+from collections import OrderedDict
+from typing import NamedTuple
 
 # ROS2 imports
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
@@ -77,17 +90,20 @@ LATCHED_QOS = QoSProfile(
 
 
 # ----------------------------------------------------------------- tunables
-# How long the boxes of one frame stay on the picture. They are pixels of the
-# frame the detector inferenced, and the live video under them keeps moving, so
-# they say a wrong thing as soon as that frame is gone. The detector inferences
-# about fifteen frames a second and every one of them reaches ROS, so silence
-# this long is the detector reporting nothing, not a link that dropped.
-#
-# The localized stream carries only the frames that held something, so a frame
-# with nothing in it arrives here as silence rather than as an empty message.
-ANNOTATION_TIMEOUT_S = 1.0
-# How often the node asks whether the boxes are still current.
-ANNOTATION_SWEEP_S = 0.2
+# How often the marks and the bubbles go out. The panels draw what the last
+# message carried, so this is the rate an operator sees a verdict change at.
+# A tick restamps arrays that are already built, which measures 0.05 ms
+# against the 4.6 ms it costs to build them, so the rate is nearly free.
+MARKER_RATE_HZ = 10.0
+# How long the boxes stay on the picture after the scorer stops publishing.
+# The verdicts take the boxes off, so this covers only a scorer that has gone
+# quiet: a backstop rather than the mechanism. A backstop that fires in normal
+# running is not a backstop, so it is several scoring periods.
+SCORER_SILENCE_S = 2.0
+# How many localization frames this node holds while the scorer judges them.
+# The scorer judges a frame as it arrives, so one or two are ever in flight,
+# and tf_loc localizes frames concurrently, so they can arrive out of order.
+FRAMES_HELD = 8
 
 
 # --------------------------------------------------------------- appearance
@@ -169,6 +185,26 @@ BOX_LINE_THICKNESS = 2.0
 BOX_LABEL_FONT_SIZE = 14.0
 BOX_LABEL_TEXT_COLOR = (1.0, 1.0, 1.0, 1.0)
 BOX_LABEL_BACKGROUND = (0.0, 0.0, 0.0, 0.6)
+
+
+class Box(NamedTuple):
+    """One detection box in the picture it was measured on, ready to draw.
+
+    This node works the corners and the label out as the frame arrives, so a
+    verdict that colors them has nothing left to compute.
+    """
+    verdict_id: str
+    label: str
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+
+def frame_key(stamp) -> tuple:
+    """What names one frame. A message stamp is two integers, and a message is
+    not hashable, so this is the key a frame is held under."""
+    return (stamp.sec, stamp.nanosec)
 
 
 def param(node, name, default):
@@ -283,11 +319,17 @@ def clear_all(header: Header) -> Marker:
     return Marker(header=header, action=Marker.DELETEALL)
 
 
+# Everything here stands still in a frame that stands still, so these tell a
+# panel to place them with the transform tree it draws now rather than with
+# the tree that stood when the node wrote the message. That is what
+# frame_locked means, and it holds a mark on its target while the aircraft
+# maneuvers, whatever rate these go out at.
 def sphere(header: Header, ns: str, marker_id: int, position, diameter: float,
            color) -> Marker:
     marker = Marker(
         header=header, ns=ns, id=marker_id, type=Marker.SPHERE,
-        action=Marker.ADD, scale=Vector3(x=diameter, y=diameter, z=diameter),
+        action=Marker.ADD, frame_locked=True,
+        scale=Vector3(x=diameter, y=diameter, z=diameter),
         color=rgba(color))
     marker.pose.position = position
     marker.pose.orientation.w = 1.0
@@ -299,7 +341,7 @@ def cross(header: Header, ns: str, marker_id: int, position, span: float,
     half = span / 2.0
     marker = Marker(
         header=header, ns=ns, id=marker_id, type=Marker.LINE_LIST,
-        action=Marker.ADD,
+        action=Marker.ADD, frame_locked=True,
         points=[Point(x=-half, y=-half), Point(x=half, y=half),
                 Point(x=-half, y=half), Point(x=half, y=-half)],
         scale=Vector3(x=DETECTION_CROSS_LINE_WIDTH),
@@ -312,8 +354,8 @@ def cross(header: Header, ns: str, marker_id: int, position, span: float,
 def text(header: Header, ns: str, marker_id: int, position, body: str) -> Marker:
     marker = Marker(
         header=header, ns=ns, id=marker_id, type=Marker.TEXT_VIEW_FACING,
-        action=Marker.ADD, text=body, scale=Vector3(z=LABEL_HEIGHT_M),
-        color=rgba(LABEL_COLOR))
+        action=Marker.ADD, frame_locked=True, text=body,
+        scale=Vector3(z=LABEL_HEIGHT_M), color=rgba(LABEL_COLOR))
     marker.pose.position = position
     marker.pose.orientation.w = 1.0
     return marker
@@ -333,8 +375,23 @@ class ScoringViz(GraphMember):
         annotations_topic = param(self, "annotations_topic", "/viz/scoring/annotations")
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
 
-        # The verdict of every estimate of the last scored frame, by its id.
-        self.verdict_for = {}
+        # The boxes of the last few localization frames, by frame stamp,
+        # waiting for the verdicts that judge them.
+        self.frames = OrderedDict()
+        # The marks and the bubbles as they stand. A message that changes
+        # them rebuilds them, and a tick between only restamps them.
+        self.verdict_markers = None
+        self.target_markers = None
+        # The bubbles alone, in target order, because their color is the only
+        # part of them the status changes.
+        self.target_bubbles = []
+        # Every target's map ring, and what the rings were built for. Ring
+        # corners are the expensive part of a tick and they never move.
+        self.ring_features = []
+        self.targets_placed = None
+        # The last collection published on each Map layer. The layers are
+        # latched, so an unchanged one needs no message.
+        self.map_drawn = {}
         # The WGS84 position of the frame the verdicts are measured in. The
         # Map panel needs longitude and latitude, and the compute node already
         # publishes this fix for every other view of the same frame.
@@ -355,15 +412,15 @@ class ScoringViz(GraphMember):
         self.annotation_pub = None
         self.geojson_pub = {}
         self.ring_pub = None
-        self.rings_drawn = None
-        # Whether boxes are on the picture now, and when the frame they were
-        # measured on arrived.
+        # Whether boxes are on the picture now, and when the scorer last
+        # spoke. The verdicts take the boxes off, so this only catches a
+        # scorer that stopped.
         self.boxes_drawn = False
-        self.boxes_drawn_sec = 0.0
+        self.verdict_sec = 0.0
+        self.create_timer(1.0 / MARKER_RATE_HZ, self.publish_markers)
         if HAVE_FOXGLOVE:
             self.annotation_pub = self.create_publisher(
                 ImageAnnotations, annotations_topic, viz_qos)
-            self.create_timer(ANNOTATION_SWEEP_S, self.expire_boxes)
             self.create_subscription(TargetBoxArray, localization_topic,
                                      self.localizations_cb, reliable_qos)
             self.create_subscription(NavSatFix, local_fix_topic,
@@ -384,12 +441,12 @@ class ScoringViz(GraphMember):
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Scoring visualization initialized!")
 
     def verdicts_cb(self, msg: Detection3DArray) -> None:
-        self.verdict_for = {
-            detection.id: (detection.results[0].hypothesis.class_id
-                           if detection.results else "FP")
-            for detection in msg.detections
-        }
+        """One frame's judgement, in every view that shows a verdict.
 
+        The marks go into the array the clock publishes. The image boxes and
+        the Map pins go out here, because each is a statement about this
+        message and nothing else says when it changed.
+        """
         markers = [clear_all(msg.header)]
         for index, detection in enumerate(msg.detections):
             kind = detection.results[0].hypothesis.class_id if detection.results else "FP"
@@ -403,7 +460,9 @@ class ScoringViz(GraphMember):
             # Namespaced by verdict, so one kind can be switched off in the 3D
             # panel without touching the others.
             markers.append(build(msg.header, kind, index, position, size, color))
-        self.verdict_pub.publish(MarkerArray(markers=markers))
+        self.verdict_markers = MarkerArray(markers=markers)
+        self.verdict_sec = self.now_sec()
+        self.publish_annotations(msg)
         self.publish_map(msg)
 
     def local_fix_cb(self, msg: NavSatFix) -> None:
@@ -412,25 +471,93 @@ class ScoringViz(GraphMember):
     def now_sec(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
-    def expire_boxes(self) -> None:
-        """Take the last boxes off the picture once their frame is too old.
+    def publish_markers(self) -> None:
+        """Send the marks and the bubbles again, stamped now.
 
-        An empty ImageAnnotations is how a panel is told there is nothing to
-        draw. Saying nothing leaves the last boxes standing on live video,
-        which reads as a detection of something that is no longer there.
+        A tick restamps and publishes the arrays it already holds. It also
+        catches a scorer that stopped: the verdicts take the boxes off the
+        picture, and nothing else would.
         """
-        if not self.boxes_drawn:
+        stamp = self.get_clock().now().to_msg()
+        for markers, publisher in ((self.verdict_markers, self.verdict_pub),
+                                   (self.target_markers, self.target_pub)):
+            if markers is None:
+                continue
+            for marker in markers.markers:
+                marker.header.stamp = stamp
+            publisher.publish(markers)
+        if (self.boxes_drawn
+                and self.now_sec() - self.verdict_sec > SCORER_SILENCE_S):
+            self.get_logger().warn(
+                f"no verdict for {SCORER_SILENCE_S:.0f} s: the boxes come off "
+                f"the picture", throttle_duration_sec=30.0)
+            self.annotation_pub.publish(ImageAnnotations())
+            self.boxes_drawn = False
+
+    def publish_annotations(self, verdicts: Detection3DArray) -> None:
+        """The boxes of the frame these verdicts judge, each in its own color.
+
+        The verdicts name their frame in the header stamp, so the boxes this
+        draws are the boxes that made the marks: one message decides both
+        views and they cannot disagree. Verdicts with nothing in them name no
+        frame, which takes every box off at that instant.
+
+        The annotations carry the frame's stamp, not the clock's: a stamp
+        taken here would slide the boxes off their frame whenever a recording
+        is scrubbed.
+
+        A box the scorer could not place carries no verdict, so it goes on
+        the picture unjudged: the detector did report it.
+        """
+        if self.annotation_pub is None:
             return
-        if self.now_sec() - self.boxes_drawn_sec < ANNOTATION_TIMEOUT_S:
+        held = self.frames.get(frame_key(verdicts.header.stamp))
+        if held is None and verdicts.detections:
+            # The frame is still on its way. Leaving the picture alone beats
+            # blinking the boxes off and straight back on.
             return
-        self.annotation_pub.publish(ImageAnnotations())
-        self.boxes_drawn = False
+        stamp, boxes = held if held is not None else (verdicts.header.stamp, [])
+        verdict_for = {detection.id: (detection.results[0].hypothesis.class_id
+                                      if detection.results else "FP")
+                       for detection in verdicts.detections}
+
+        out = ImageAnnotations()
+        for box in boxes:
+            color = fox_color(VERDICT_COLOR.get(verdict_for.get(box.verdict_id),
+                                                UNJUDGED_COLOR))
+            outline = PointsAnnotation()
+            outline.timestamp = stamp
+            outline.type = PointsAnnotation.LINE_LOOP
+            outline.thickness = BOX_LINE_THICKNESS
+            outline.outline_color = color
+            outline.points = [
+                Point2(x=box.left, y=box.top),
+                Point2(x=box.right, y=box.top),
+                Point2(x=box.right, y=box.bottom),
+                Point2(x=box.left, y=box.bottom),
+            ]
+            out.points.append(outline)
+
+            label = TextAnnotation()
+            label.timestamp = stamp
+            label.position = Point2(x=box.left,
+                                    y=max(box.top - 4.0, BOX_LABEL_FONT_SIZE))
+            label.text = box.label
+            label.font_size = BOX_LABEL_FONT_SIZE
+            label.text_color = fox_color(BOX_LABEL_TEXT_COLOR)
+            label.background_color = fox_color(BOX_LABEL_BACKGROUND)
+            out.texts.append(label)
+
+        self.annotation_pub.publish(out)
+        self.boxes_drawn = bool(out.points)
 
     def publish_map(self, msg: Detection3DArray) -> None:
-        """Every Map panel layer, every tick.
+        """Every Map panel layer.
 
-        A kind with nothing this tick publishes an empty collection, which
-        takes its pins off the panel instead of leaving the last hit there.
+        A kind with nothing on it goes out as an empty collection, which takes
+        its pins off the panel instead of leaving the last hit there. The
+        layers are latched, so an unchanged one needs no message and a panel
+        that connects later still gets the last one.
         """
         if not self.geojson_pub:
             return
@@ -452,101 +579,117 @@ class ScoringViz(GraphMember):
                 center.y + correction[1], center.z + correction[2])
             features[kind].append(map_feature(detection, latitude, longitude))
         for kind, publisher in self.geojson_pub.items():
-            publisher.publish(GeoJSON(geojson=json.dumps(
-                {"type": "FeatureCollection", "features": features[kind]})))
+            drawn = json.dumps({"type": "FeatureCollection",
+                                "features": features[kind]})
+            if drawn == self.map_drawn.get(kind):
+                continue
+            self.map_drawn[kind] = drawn
+            publisher.publish(GeoJSON(geojson=drawn))
 
     def status_cb(self, msg: Detection3DArray) -> None:
-        markers = [clear_all(msg.header)]
+        """Every target's bubble and map ring, in the color of its status.
+
+        Targets stand still, so this builds the bubbles, the names and the
+        ring corners once and holds them. Building the rings again costs a
+        hundred milliseconds and recoloring them costs under one, so only the
+        colors follow the status.
+        """
+        correction = None if self.local_fix is None else self.survey.correction()
+        placed = (
+            tuple((detection.id,
+                   detection.bbox.center.position.x,
+                   detection.bbox.center.position.y,
+                   detection.bbox.center.position.z,
+                   detection.bbox.size.x) for detection in msg.detections),
+            None if correction is None else
+            (self.local_fix.latitude, self.local_fix.longitude,
+             self.local_fix.altitude, tuple(correction)))
+        if placed != self.targets_placed:
+            self.place_targets(msg, correction)
+            self.targets_placed = placed
+
         for index, detection in enumerate(msg.detections):
             status = (detection.results[0].hypothesis.class_id
                       if detection.results else "out_of_view")
-            color = STATUS_COLOR.get(status, STATUS_COLOR["out_of_view"])
+            self.target_bubbles[index].color = rgba(
+                STATUS_COLOR.get(status, STATUS_COLOR["out_of_view"]))
+            if self.ring_features:
+                properties = self.ring_features[index]["properties"]
+                properties["metadata"]["status"] = status
+                properties["style"]["color"] = MAP_STATUS_COLOR.get(
+                    status, MAP_STATUS_COLOR["out_of_view"])
+        self.publish_rings()
+
+    def place_targets(self, msg: Detection3DArray, correction) -> None:
+        """Build the bubble, the name and the map ring of every target.
+
+        Where the targets are and where their frame sits on the Earth fix
+        everything here. Both hold still, so this runs when one of them
+        changes rather than on every message.
+        """
+        markers = [clear_all(msg.header)]
+        self.target_bubbles = []
+        self.ring_features = []
+        for index, detection in enumerate(msg.detections):
             position = detection.bbox.center.position
             # The gate the estimate was scored against, straight off the wire.
-            markers.append(sphere(msg.header, "targets", index, position,
-                                  detection.bbox.size.x, color))
+            bubble = sphere(msg.header, "targets", index, position,
+                            detection.bbox.size.x, STATUS_COLOR["out_of_view"])
+            markers.append(bubble)
+            self.target_bubbles.append(bubble)
             label_position = Point(x=position.x, y=position.y,
                                    z=position.z + detection.bbox.size.x / 2.0
                                    + LABEL_HEIGHT_M)
             markers.append(text(msg.header, "target_names", index,
                                 label_position, detection.id))
-        self.target_pub.publish(MarkerArray(markers=markers))
-        self.publish_rings(msg)
-
-    def publish_rings(self, msg: Detection3DArray) -> None:
-        """A ring around every known target, in the color of its status."""
-        if self.ring_pub is None or self.local_fix is None:
-            return
-        correction = self.survey.correction()
-        features = []
-        for detection in msg.detections:
-            status = (detection.results[0].hypothesis.class_id
-                      if detection.results else "out_of_view")
-            center = detection.bbox.center.position
+            if correction is None:
+                continue
             ring = []
             for step in range(TARGET_RING_POINTS + 1):
                 angle = 2.0 * math.pi * step / TARGET_RING_POINTS
                 latitude, longitude, _ = enu_2_lla(
                     self.local_fix,
-                    center.x + TARGET_RING_RADIUS_M * math.cos(angle) + correction[0],
-                    center.y + TARGET_RING_RADIUS_M * math.sin(angle) + correction[1],
-                    center.z + correction[2])
+                    position.x + TARGET_RING_RADIUS_M * math.cos(angle) + correction[0],
+                    position.y + TARGET_RING_RADIUS_M * math.sin(angle) + correction[1],
+                    position.z + correction[2])
                 ring.append([longitude, latitude])
-            features.append(ring_feature(detection.id, status, ring))
-        drawn = json.dumps({"type": "FeatureCollection", "features": features})
-        # Targets do not move and their status seldom changes, so this is the
-        # same half a megabyte over and over. The layer is latched, so a panel
-        # that connects later still gets the last one.
-        if drawn == self.rings_drawn:
+            self.ring_features.append(
+                ring_feature(detection.id, "out_of_view", ring))
+        self.target_markers = MarkerArray(markers=markers)
+
+    def publish_rings(self) -> None:
+        """The rings, when a status has changed one.
+
+        A scene holds hundreds of targets and every ring goes out whole, so
+        this is the same half a megabyte over and over otherwise. The layer is
+        latched, so a panel that connects later still gets the last one.
+        """
+        if self.ring_pub is None or not self.ring_features:
             return
-        self.rings_drawn = drawn
+        drawn = json.dumps({"type": "FeatureCollection",
+                            "features": self.ring_features})
+        if drawn == self.map_drawn.get("rings"):
+            return
+        self.map_drawn["rings"] = drawn
         self.ring_pub.publish(GeoJSON(geojson=drawn))
 
     def localizations_cb(self, msg: TargetBoxArray) -> None:
-        """The frame's boxes, each in the color of its own verdict.
+        """Hold one frame's boxes until the verdicts that judge it arrive.
 
-        The annotations carry the frame's stamp, not the clock's: a stamp taken
-        here would slide the boxes off their frame whenever a recording is
-        scrubbed.
-
-        A frame with no boxes goes out as an empty message, which takes the
-        last boxes off the panel. `expire_boxes` says the same thing on a
-        clock, for the frames that reach nobody because they held nothing.
+        Nothing is drawn here. A box goes on the picture when its verdict
+        does, so the boxes and the marks are always the same detections.
         """
-        out = ImageAnnotations()
+        boxes = []
         for index, box in enumerate(msg.uav_target_boxes):
-            verdict = self.verdict_for.get(f"{box.data_source_id}_{index}")
-            color = fox_color(VERDICT_COLOR.get(verdict, UNJUDGED_COLOR))
-            half_w = box.target_bbox.size_x / 2.0
-            half_h = box.target_bbox.size_y / 2.0
-            center_x = box.target_bbox.center.position.x
-            center_y = box.target_bbox.center.position.y
-
-            outline = PointsAnnotation()
-            outline.timestamp = msg.header.stamp
-            outline.type = PointsAnnotation.LINE_LOOP
-            outline.thickness = BOX_LINE_THICKNESS
-            outline.outline_color = color
-            outline.points = [
-                Point2(x=center_x - half_w, y=center_y - half_h),
-                Point2(x=center_x + half_w, y=center_y - half_h),
-                Point2(x=center_x + half_w, y=center_y + half_h),
-                Point2(x=center_x - half_w, y=center_y + half_h),
-            ]
-            out.points.append(outline)
-
-            label = TextAnnotation()
-            label.timestamp = msg.header.stamp
-            label.position = Point2(
-                x=center_x - half_w,
-                y=max(center_y - half_h - 4.0, BOX_LABEL_FONT_SIZE))
-            label.text = annotation_text(box.detection_class or "object",
-                                         str(box.data_source_id))
-            label.font_size = BOX_LABEL_FONT_SIZE
-            label.text_color = fox_color(BOX_LABEL_TEXT_COLOR)
-            label.background_color = fox_color(BOX_LABEL_BACKGROUND)
-            out.texts.append(label)
-
-        self.annotation_pub.publish(out)
-        self.boxes_drawn = bool(out.points or out.texts)
-        self.boxes_drawn_sec = self.now_sec()
+            half_width = box.target_bbox.size_x / 2.0
+            half_height = box.target_bbox.size_y / 2.0
+            center = box.target_bbox.center.position
+            boxes.append(Box(
+                verdict_id=f"{box.data_source_id}_{index}",
+                label=annotation_text(box.detection_class or "object",
+                                      str(box.data_source_id)),
+                left=center.x - half_width, top=center.y - half_height,
+                right=center.x + half_width, bottom=center.y + half_height))
+        self.frames[frame_key(msg.header.stamp)] = (msg.header.stamp, boxes)
+        while len(self.frames) > FRAMES_HELD:
+            self.frames.popitem(last=False)

@@ -277,10 +277,10 @@ class Vehicle(FrameMember):
             return
 
         old, new = self.fid_t.transform.translation, msg.transform.translation
-        # tf_loc re-asserts the standing correction on a timer so the edge survives a restart
-        # here, so most updates carry a value we already hold. Re-broadcast regardless (that is
-        # the point of the re-assert), but only log when the correction actually moved --
-        # otherwise this is a log line every republish period, forever.
+        # tf_loc publishes a survey once and latches it, so this node is re-told the standing
+        # correction whenever it restarts, and the update usually carries a value we already
+        # hold. Re-broadcast regardless -- a restart comes up with an identity edge and this is
+        # what puts the survey back -- but only log when the correction actually moved.
         changed = max(abs(new.x - old.x), abs(new.y - old.y), abs(new.z - old.z)) > 1e-6
 
         self.fid_t.transform.translation.x = new.x
