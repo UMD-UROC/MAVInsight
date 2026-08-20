@@ -14,15 +14,15 @@ building of floating floors draws its levels exactly as a building that stands
 on the ground does.
 
 A timer watches the file's mtime, so a scene rebuilt while the stack runs
-appears within a few seconds and needs no restart. Every publish leads with a
-DELETEALL, so a building that left the scene also leaves the display.
+appears within a few seconds and needs no restart. One entity carries the
+whole scene, so a building that left it also leaves the display.
 
-The file measures every coordinate from the scene centre, and the markers go
+The file measures every coordinate from the scene centre, and the model goes
 in a frame centred on the vehicle's home position. Those are two different
 points: the simulator parks each vehicle a few metres from the one before it,
 so only the first vehicle takes off at the scene centre. The file carries
 `origin_lla`, which IS the scene centre, so this node measures it against the
-home fix and moves every vertex by that much. The launch then gives it the
+home fix and puts that on the model's pose. The launch then gives it the
 vehicle's own home frame and no launch has to know where a vehicle stands. A
 roof drawn any other way disagrees with the terrain the same building is
 localized against.
@@ -30,29 +30,45 @@ localized against.
 Nothing goes out before the first home fix. Buildings at the wrong offset look
 correct and are wrong, which is worse than an empty panel.
 
+The scene's satellite image goes over the roofs, the same image and the same
+mapping the terrain is drawn with, so the map reads as one picture draped over
+the ground and the buildings on it rather than stopping at every wall. The
+terrain's own texture coordinates are a straight map over the scene square to
+within half a pixel, so a roof takes the piece of the map it stands on and
+lines up with the ground around it.
+
+That is why the buildings go out as a model rather than as coloured triangles:
+Foxglove draws no texture on a triangle list, and a roof is one polygon whose
+corners are its only vertices, so a colour for each corner would wash the
+whole building into one shade.
+
 Subscribes
     <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
                             <reference_frame>
 Publishes
-    <buildings_viz_topic>   visualization_msgs/MarkerArray, latched
+    <buildings_viz_topic>   foxglove_msgs/SceneUpdate, latched
 """
 
 # python imports
+import io
 import json
 import math
 from pathlib import Path
+
+import numpy as np
+from PIL import Image
 
 # ROS2 imports
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 
 # ROS2 message imports
-from geometry_msgs.msg import Point, Vector3
+from foxglove_msgs.msg import Color, ModelPrimitive, SceneEntity, SceneUpdate
+from geometry_msgs.msg import Quaternion, Vector3
 from sensor_msgs.msg import NavSatFix
-from std_msgs.msg import ColorRGBA, Header
-from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
+from models import gltf
 from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
 from models.qos_profiles import reliable_qos
@@ -64,7 +80,10 @@ LEVEL_FORMAT = "scenegen-buildings/2"
 # as a building of one level, so a scene built before the format changed still
 # draws.
 ROOF_FORMAT = "scenegen-buildings/1"
-MARKER_NAMESPACE = "buildings"
+ENTITY_ID = "scene_buildings"
+# How wide the square a scene covers, where its surface file does not say.
+# Only the image over the roofs depends on it.
+DEFAULT_SCENE_SIDE_M = 600.0
 DEFAULT_SURFACE_COLOR = (0.72, 0.72, 0.74)
 SURFACE_ALPHA = 1.0
 # How often to look for a changed file. One stat call costs nothing, and a
@@ -270,55 +289,65 @@ def triangulate(footprint, holes):
 
 
 # ---------------------------------------------------------------- surfaces
-def surface_color(rgb):
-    """One surface color.
+def flat_image(color=DEFAULT_SURFACE_COLOR) -> bytes:
+    """One color, as an image. A model carries a texture and nothing else, so
+    a scene with no satellite raster still draws its roofs in a plain shade
+    rather than not at all."""
+    packed = io.BytesIO()
+    Image.new("RGB", (2, 2), tuple(int(255 * channel) for channel in color)) \
+        .save(packed, "JPEG", quality=90)
+    return packed.getvalue()
 
-    The file writes 0 to 1. A 0 to 255 triple is scaled as well, so a writer
-    that changes convention cannot turn every roof white.
+
+def scene_side(path) -> float:
+    """How wide the scene's square is, out of the surface file that decides
+    it. The image over the roofs is mapped across that square, so this is the
+    same number the terrain is drawn with."""
+    try:
+        return float(json.loads(Path(path).read_text())["side_m"])
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return DEFAULT_SCENE_SIDE_M
+
+
+def satellite_uvs(points, side_m: float):
+    """Where each roof corner falls on the scene's satellite image.
+
+    The terrain's own texture coordinates are a straight map over the scene
+    square to within half a pixel, so this is that map: a roof takes the piece
+    of the image it stands on and registers with the ground around it. v is
+    measured up from the bottom of the image, which is what gltf.py expects.
     """
-    if not rgb:
-        rgb = DEFAULT_SURFACE_COLOR
-    scale = 255.0 if max(rgb) > 1.0 else 1.0
-    return ColorRGBA(r=float(rgb[0]) / scale, g=float(rgb[1]) / scale,
-                     b=float(rgb[2]) / scale, a=SURFACE_ALPHA)
+    scene = np.asarray(points, dtype=float)
+    return np.column_stack([(scene[:, 0] + side_m / 2.0) / side_m,
+                            (scene[:, 1] + side_m / 2.0) / side_m])
 
 
-def level_surfaces(building, offset):
-    """Every level of one building, as triangle corners and their colors.
+def level_surfaces(building):
+    """Every level of one building, as triangle corners in scene coordinates.
 
     The levels of a building share its footprint, so the triangulation is
     done once and lifted to each level's own height. Raises ValueError on a
     footprint that is not a simple polygon.
     """
-    east, north, up = offset
     mesh = triangulate(building.get("footprint") or [],
                        building.get("holes") or [])
     points = []
-    colors = []
     for level in building.get("levels") or []:
-        color = surface_color(level.get("color"))
-        height = float(level.get("z", 0.0)) + up
+        height = float(level.get("z", 0.0))
         for triangle in mesh:
-            points += [Point(x=corner[0] + east, y=corner[1] + north, z=height)
-                       for corner in triangle]
-            colors += [color] * len(triangle)
-    return points, colors
+            points += [(corner[0], corner[1], height) for corner in triangle]
+    return points
 
 
-def roof_surfaces(building, offset):
+def roof_surfaces(building):
     """The one roof of a `scenegen-buildings/1` building, walls dropped.
 
-    That format carries the roof as triangles already, with a satellite color
-    for each corner, so it needs no triangulation.
+    That format carries the roof as triangles already, so it needs no
+    triangulation. Its own per corner colors are not read: the satellite image
+    goes over every roof, whichever format wrote it.
     """
-    east, north, up = offset
     roof = building.get("roof") or {}
-    points = [Point(x=float(x) + east, y=float(y) + north, z=float(z) + up)
-              for x, y, z in roof.get("points") or []]
-    colors = [surface_color(color) for color in roof.get("colors") or []]
-    if len(colors) != len(points):
-        colors = [surface_color(None)] * len(points)
-    return points, colors
+    return [(float(x), float(y), float(z)) for x, y, z in roof.get("points") or []]
 
 
 def as_fix(lla) -> NavSatFix:
@@ -337,11 +366,17 @@ class BuildingsViz(GraphMember):
         self.path = Path(configured) if configured else None
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
         self.geoid_height = float(param(self, "geoid_height_m", 0.0))
+        # The scene's own image and how wide the square it covers is, so a
+        # roof takes the piece of the map it stands on.
+        texture = param(self, "terrain_texture_file", "")
+        self.texture_path = Path(texture) if texture else None
+        self.texture_px = int(param(self, "terrain_texture_px", 2048))
+        self.side_m = scene_side(param(self, "terrain_surface_file", ""))
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "buildings_viz_topic", "/viz/scene/buildings")
 
-        self.marker_pub = self.create_publisher(MarkerArray, viz_topic, LATCHED_QOS)
-        # Where the frame the markers go in sits on the Earth.
+        self.scene_pub = self.create_publisher(SceneUpdate, viz_topic, LATCHED_QOS)
+        # Where the frame the model goes in sits on the Earth.
         self.local_fix = None
         # No file has been read yet. An mtime never takes this value.
         self.published_stamp = 0
@@ -350,7 +385,7 @@ class BuildingsViz(GraphMember):
             self.get_logger().warn(
                 "no buildings_file, so the 3D panel shows no structures. A "
                 "scene names one; an aircraft outside a built scene does not.")
-            self.marker_pub.publish(MarkerArray(markers=[self.clear_all()]))
+            self.scene_pub.publish(self.empty())
         else:
             self.create_subscription(NavSatFix, local_fix_topic,
                                      self.local_fix_cb, reliable_qos)
@@ -390,25 +425,34 @@ class BuildingsViz(GraphMember):
             self.get_logger().info(
                 f"no buildings file at {self.path}. The 3D panel shows none "
                 f"until scenegen build writes it next to the world.")
-        self.marker_pub.publish(self.buildings())
+        self.scene_pub.publish(self.buildings())
 
-    def clear_all(self) -> Marker:
-        """Leads every array, so a building that left the scene also leaves
-        the display."""
-        return Marker(header=Header(frame_id=self.REFERENCE_FRAME),
-                      action=Marker.DELETEALL)
+    def empty(self) -> SceneUpdate:
+        """Nothing to draw, which clears the panel."""
+        return SceneUpdate(deletions=[], entities=[])
 
-    def buildings(self) -> MarkerArray:
-        """The buildings on disk, led by the wipe. With no usable file the
-        wipe goes out alone, which clears the panel."""
-        markers = [self.clear_all()]
+    def texture(self):
+        """The scene's satellite image, no wider than asked for, or a plain
+        shade where the scene has none."""
+        if self.texture_path is None or not self.texture_path.is_file():
+            return flat_image(), (2, 2)
+        image = Image.open(self.texture_path)
+        if max(image.size) > self.texture_px:
+            image.thumbnail((self.texture_px, self.texture_px))
+        packed = io.BytesIO()
+        image.convert("RGB").save(packed, "JPEG", quality=88)
+        return packed.getvalue(), image.size
+
+    def buildings(self) -> SceneUpdate:
+        """The buildings on disk, as one textured model. With no usable file
+        an empty update goes out, which clears the panel."""
         if not self.path.is_file():
-            return MarkerArray(markers=markers)
+            return self.empty()
         try:
             scene = json.loads(self.path.read_text())
         except (OSError, json.JSONDecodeError) as error:
             self.get_logger().error(f"cannot read {self.path}: {error}")
-            return MarkerArray(markers=markers)
+            return self.empty()
 
         surfaces = {LEVEL_FORMAT: level_surfaces,
                     ROOF_FORMAT: roof_surfaces}.get(scene.get("format"))
@@ -417,7 +461,7 @@ class BuildingsViz(GraphMember):
                 f"{self.path} carries format {scene.get('format')!r}, and this "
                 f"node reads {LEVEL_FORMAT!r} or {ROOF_FORMAT!r}. Build the "
                 f"scene again.")
-            return MarkerArray(markers=markers)
+            return self.empty()
 
         origin = scene.get("origin_lla")
         if not origin or len(origin) < 3:
@@ -425,32 +469,53 @@ class BuildingsViz(GraphMember):
                 f"{self.path} carries no origin_lla, so the scene cannot be "
                 f"placed against {self.REFERENCE_FRAME}. Build the scene "
                 f"again.")
-            return MarkerArray(markers=markers)
+            return self.empty()
         # Where the scene centre sits in the reference frame. The same
         # translation umd_uas/terrain.py applies to reach the tile, so a roof
-        # here stands on the surface a ray meets there.
+        # here stands on the surface a ray meets there. It rides on the pose,
+        # so the model itself is the scene as the file wrote it.
         offset = lla_2_enu(self.local_fix, self.scene_origin(origin), ignore_alt=False)
 
-        stamp = self.get_clock().now().to_msg()
-        corners = 0
+        points = []
+        drawn = 0
         for index, building in enumerate(scene.get("buildings") or []):
             try:
-                points, colors = surfaces(building, offset)
+                corners = surfaces(building)
             # A malformed entry costs its own building and no more.
             except (IndexError, TypeError, ValueError) as error:
                 self.get_logger().warn(
                     f"{building.get('id') or index} is not drawn: {error}. "
                     f"Build the scene again.")
                 continue
-            if not points:
-                continue
-            corners += len(points)
-            markers.append(self.surface_marker(index, points, colors, stamp))
+            if corners:
+                points += corners
+                drawn += 1
+        if not points:
+            return self.empty()
+
+        image, size = self.texture()
+        model = gltf.textured_mesh(
+            np.asarray(points, dtype=float), satellite_uvs(points, self.side_m),
+            np.arange(len(points), dtype=np.uint32), image, "image/jpeg")
+
+        east, north, up = offset
+        primitive = ModelPrimitive(media_type="model/gltf-binary", data=list(model))
+        primitive.pose.position.x = float(east)
+        primitive.pose.position.y = float(north)
+        primitive.pose.position.z = float(up)
+        primitive.pose.orientation = Quaternion(w=1.0)
+        primitive.scale = Vector3(x=1.0, y=1.0, z=1.0)
+        primitive.color = Color(r=1.0, g=1.0, b=1.0, a=SURFACE_ALPHA)
+
+        entity = SceneEntity(id=ENTITY_ID, frame_id=self.REFERENCE_FRAME,
+                             frame_locked=True, models=[primitive])
+        entity.timestamp = self.get_clock().now().to_msg()
         self.get_logger().info(
-            f"{len(markers) - 1} buildings, {corners // 3} triangles, from "
-            f"{self.path} in frame {self.REFERENCE_FRAME}, scene centre at "
-            f"({offset[0]:+.1f}, {offset[1]:+.1f}, {offset[2]:+.1f}) m")
-        return MarkerArray(markers=markers)
+            f"{drawn} buildings, {len(points) // 3} triangles and a "
+            f"{size[0]}x{size[1]} image, from {self.path} in frame "
+            f"{self.REFERENCE_FRAME}, {len(model) // 1024} kB, scene centre at "
+            f"({east:+.1f}, {north:+.1f}, {up:+.1f}) m")
+        return SceneUpdate(deletions=[], entities=[entity])
 
     def scene_origin(self, origin) -> NavSatFix:
         """The scene centre as a fix in the datum the vehicle reports. A scene
@@ -459,20 +524,3 @@ class BuildingsViz(GraphMember):
         33 m in Maryland, which is the whole height of what is drawn."""
         latitude, longitude, mean_sea_level = (float(v) for v in origin[:3])
         return as_fix((latitude, longitude, mean_sea_level + self.geoid_height))
-
-    def surface_marker(self, index, points, colors, stamp) -> Marker:
-        """One building's floors. Triangles wind counter-clockwise, so every
-        surface faces up, toward the camera that looks down on it."""
-        marker = Marker(
-            header=Header(frame_id=self.REFERENCE_FRAME, stamp=stamp),
-            ns=MARKER_NAMESPACE,
-            id=index,
-            type=Marker.TRIANGLE_LIST,
-            action=Marker.ADD,
-            points=points,
-            colors=colors,
-            scale=Vector3(x=1.0, y=1.0, z=1.0),
-            color=ColorRGBA(r=1.0, g=1.0, b=1.0, a=SURFACE_ALPHA),
-            frame_locked=True)
-        marker.pose.orientation.w = 1.0
-        return marker

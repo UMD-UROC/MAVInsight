@@ -8,7 +8,8 @@ node only draws them, in every view at once:
     3D panel   a bubble on every target, colored by its status, and a mark on
                every estimate, colored by its verdict
     Image      the detection boxes, each in the color of its own verdict
-    Map panel  one layer for each verdict kind, a pin on every estimate
+    Map panel  one layer for each verdict kind, a pin on every estimate, and
+               a ring around every known target in the color of its status
 
 The bubble radius comes from `bbox.size` of the message, which carries the gate
 the estimate was scored against. Nothing here decides it, so a mark inside a
@@ -28,12 +29,13 @@ Publishes
     <target_viz_topic>       visualization_msgs/MarkerArray
     <annotations_topic>      foxglove_msgs/ImageAnnotations
     <true_positive_geojson_topic>, <mislocalized_geojson_topic>,
-    <false_positive_geojson_topic>
+    <false_positive_geojson_topic>, <target_ring_geojson_topic>
                              foxglove_msgs/GeoJSON, latched
 """
 
 # python imports
 import json
+import math
 
 # ROS2 imports
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
@@ -88,6 +90,12 @@ MAP_VERDICT_COLOR = {
     "MISLOCALIZED": "#ffff00",
     "FP": "#ff0000",
 }
+# What a verdict cites, as umd_uas/scoring.py writes it. Each citation carries
+# the ground distance to that target.
+HIT = "hit:"
+CROSSED = "crossed:"
+NEAREST = "nearest:"
+
 # Which Map panel layer each verdict goes to, and the parameter that renames
 # it. An FN has no estimate to place, so it has no entry: it shows as its
 # target bubble turning red.
@@ -96,6 +104,25 @@ MAP_VERDICT_TOPIC = {
     "MISLOCALIZED": ("mislocalized_geojson_topic", "/viz/scoring/missed_localizations"),
     "FP": ("false_positive_geojson_topic", "/viz/scoring/false_positives"),
 }
+MAP_RING_TOPIC = ("target_ring_geojson_topic", "/viz/scoring/target_rings")
+
+# The same four target statuses on the Map panel, as CSS colors. A target
+# nobody is looking at is grey rather than red: it has not been missed, it has
+# not been seen.
+MAP_STATUS_COLOR = {
+    "detected": "#00ff00",
+    "mislocalized": "#ffff00",
+    "visible": "#ff0000",
+    "out_of_view": "#9aa0a6",
+}
+# A ring this far around each known target, drawn as a line rather than a
+# filled shape so the imagery under it stays readable. A scene holds hundreds
+# of targets and every ring goes out whole, so the corner count is the size of
+# the layer: twelve of them stand less than a tenth of a metre inside a circle
+# this small, which is nothing an operator can see.
+TARGET_RING_RADIUS_M = 2.0
+TARGET_RING_POINTS = 12
+TARGET_RING_WEIGHT = 2
 
 # Verdicts drawn as a flat cross rather than a dot: they mark a problem.
 CROSS_VERDICTS = frozenset({"MISLOCALIZED", "FP"})
@@ -150,33 +177,83 @@ def annotation_text(label: str, identifier: str) -> str:
     return f"{label} {identifier}".strip()
 
 
+def cited(detection):
+    """What one estimate touched, out of the verdict's own citations.
+
+    umd_uas/scoring.py marks each one with what it is and hangs the ground
+    distance on it, so this reads them by name rather than by counting what
+    came before. Anything unmarked is the detector's own label.
+    """
+    hit, crossed, nearest, label, confidence = [], [], None, "", 0.0
+    for result in detection.results[1:]:
+        name, distance = result.hypothesis.class_id, float(result.hypothesis.score)
+        if name.startswith(HIT):
+            hit.append((name[len(HIT):], distance))
+        elif name.startswith(CROSSED):
+            crossed.append((name[len(CROSSED):], distance))
+        elif name.startswith(NEAREST):
+            nearest = (name[len(NEAREST):], distance)
+        else:
+            label, confidence = name, distance
+    return hit, crossed, nearest, label, confidence
+
+
+def with_distances(targets) -> str:
+    return ", ".join(f"{name} {distance:.1f} m" for name, distance in targets)
+
+
 def map_feature(detection, latitude: float, longitude: float) -> dict:
     """One estimate as a GeoJSON point.
 
     The Map panel shows `name` and `metadata` in the hover tooltip and reads
     its Leaflet options from `style`. The name is the label the image overlay
     draws, so a pin and its box read as one detection.
+
+    Every verdict carries the same account of itself, so a false positive is
+    read the same way a hit is: what it landed in, what its ray went through,
+    and what the nearest target was however far off it fell.
     """
     kind = detection.results[0].hypothesis.class_id
     color = MAP_VERDICT_COLOR[kind]
-    detected = detection.results[1].hypothesis if len(detection.results) > 1 else None
-    names = [result.hypothesis.class_id for result in detection.results[2:]]
+    hit, crossed, nearest, label, confidence = cited(detection)
     metadata = {"verdict": kind}
-    if detected is not None:
-        metadata["confidence"] = round(float(detected.score), 3)
-    if names:
-        # What this estimate matched, so the pin and the bubble it colored can
-        # be read together. The ground error rides in the verdict's own score.
-        metadata["targets"] = ", ".join(names)
-        metadata["error_m"] = round(float(detection.results[0].hypothesis.score), 2)
+    if label:
+        metadata["confidence"] = round(confidence, 3)
+    if hit:
+        metadata["in_gate_of"] = with_distances(hit)
+    if crossed:
+        metadata["ray_crossed"] = with_distances(crossed)
+    if nearest:
+        metadata["nearest"] = nearest[0]
+        metadata["nearest_error_m"] = round(nearest[1], 2)
     return {
         "type": "Feature",
         "geometry": {"type": "Point", "coordinates": [longitude, latitude]},
         "properties": {
-            "name": annotation_text(detected.class_id if detected else "",
-                                    detection.id),
+            "name": annotation_text(label, detection.id),
             "metadata": metadata,
             "style": {"color": color, "fillColor": color, "fillOpacity": 0.9},
+        },
+    }
+
+
+def ring_feature(name: str, status: str, ring) -> dict:
+    """One known target as a ring on the Map panel.
+
+    A LineString rather than a Polygon: a polygon is a filled shape, and the
+    panel draws the fill over the imagery the operator is reading the target
+    off. `fill` is off as well, so the same holds wherever the ring is drawn
+    as an area, and nothing is drawn part transparent.
+    """
+    color = MAP_STATUS_COLOR.get(status, MAP_STATUS_COLOR["out_of_view"])
+    return {
+        "type": "Feature",
+        "geometry": {"type": "LineString", "coordinates": ring},
+        "properties": {
+            "name": name,
+            "metadata": {"status": status},
+            "style": {"color": color, "weight": TARGET_RING_WEIGHT,
+                      "opacity": 1.0, "fill": False},
         },
     }
 
@@ -255,6 +332,8 @@ class ScoringViz(GraphMember):
 
         self.annotation_pub = None
         self.geojson_pub = {}
+        self.ring_pub = None
+        self.rings_drawn = None
         if HAVE_FOXGLOVE:
             self.annotation_pub = self.create_publisher(
                 ImageAnnotations, annotations_topic, viz_qos)
@@ -267,6 +346,8 @@ class ScoringViz(GraphMember):
                                             LATCHED_QOS)
                 for kind, (name, default) in MAP_VERDICT_TOPIC.items()
             }
+            self.ring_pub = self.create_publisher(
+                GeoJSON, param(self, *MAP_RING_TOPIC), LATCHED_QOS)
         else:
             self.get_logger().error(
                 "foxglove_msgs is missing, so the Image panel gets no boxes "
@@ -344,6 +425,35 @@ class ScoringViz(GraphMember):
             markers.append(text(msg.header, "target_names", index,
                                 label_position, detection.id))
         self.target_pub.publish(MarkerArray(markers=markers))
+        self.publish_rings(msg)
+
+    def publish_rings(self, msg: Detection3DArray) -> None:
+        """A ring around every known target, in the color of its status."""
+        if self.ring_pub is None or self.local_fix is None:
+            return
+        features = []
+        for detection in msg.detections:
+            status = (detection.results[0].hypothesis.class_id
+                      if detection.results else "out_of_view")
+            center = detection.bbox.center.position
+            ring = []
+            for step in range(TARGET_RING_POINTS + 1):
+                angle = 2.0 * math.pi * step / TARGET_RING_POINTS
+                latitude, longitude, _ = enu_2_lla(
+                    self.local_fix,
+                    center.x + TARGET_RING_RADIUS_M * math.cos(angle),
+                    center.y + TARGET_RING_RADIUS_M * math.sin(angle),
+                    center.z)
+                ring.append([longitude, latitude])
+            features.append(ring_feature(detection.id, status, ring))
+        drawn = json.dumps({"type": "FeatureCollection", "features": features})
+        # Targets do not move and their status seldom changes, so this is the
+        # same half a megabyte over and over. The layer is latched, so a panel
+        # that connects later still gets the last one.
+        if drawn == self.rings_drawn:
+            return
+        self.rings_drawn = drawn
+        self.ring_pub.publish(GeoJSON(geojson=drawn))
 
     def localizations_cb(self, msg: TargetBoxArray) -> None:
         """The frame's boxes, each in the color of its own verdict.
