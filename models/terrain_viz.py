@@ -21,9 +21,15 @@ half a metre a pixel instead of five.
 
 The mesh measures every coordinate from the scene centre and the markers go in
 a frame centred on the vehicle's home position, the same two points
-buildings_viz reconciles. The surface file carries `origin_lla`, which IS the
-scene centre, so this node measures it against the home fix and moves every
-vertex by that much.
+buildings_viz reconciles. `models/scene_ground.py` works out where one sits in
+the other, and both scene layers read it from there, so the ground and the
+buildings on it can never stand at different heights.
+
+That offset is watched rather than read once. PX4 moves the home position when
+the vehicle arms, and `umd_uas/footprint.py` casts its rays against the fix as
+it is now, so a terrain placed at startup and held sinks or rises under the
+footprint and the live view that lie on it. The model does not change when the
+scene moves, so the bytes are held and only the pose goes out again.
 
 Nothing goes out before the first home fix. Terrain at the wrong offset looks
 correct and is wrong, which is worse than an empty panel.
@@ -32,7 +38,7 @@ Subscribes
     <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
                             <reference_frame>
 Publishes
-    <terrain_viz_topic>     visualization_msgs/MarkerArray, latched
+    <terrain_viz_topic>     foxglove_msgs/SceneUpdate, latched
 """
 
 # python imports
@@ -52,24 +58,22 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
 # ROS2 message imports
 from foxglove_msgs.msg import Color, ModelPrimitive, SceneEntity, SceneUpdate
 from geometry_msgs.msg import Quaternion, Vector3
-from sensor_msgs.msg import NavSatFix
 
 # MAVInsight imports
 from models import gltf
-from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
+from models.scene_ground import SceneGround
 
 COLLADA = "{http://www.collada.org/2005/11/COLLADASchema}"
 ENTITY_ID = "scene_terrain"
-# How far the home fix moves before the scene is placed again.
-HOME_MOVE_M = 1.0
+# How often the mesh file and the ground under it are looked at again. Both
+# checks are a stat call and a subtraction, so this is what decides how long an
+# operator waits after a home update or a scene rebuild.
 RELOAD_CHECK_S = 5.0
 
 LATCHED_QOS = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                          history=HistoryPolicy.KEEP_LAST,
                          reliability=ReliabilityPolicy.RELIABLE)
-reliable_qos = QoSProfile(depth=10, history=HistoryPolicy.KEEP_LAST,
-                          reliability=ReliabilityPolicy.RELIABLE)
 
 
 def param(node, name, default):
@@ -99,12 +103,6 @@ def grid_side(vertices: int) -> int:
     return side
 
 
-def as_fix(lla) -> NavSatFix:
-    fix = NavSatFix()
-    fix.latitude, fix.longitude, fix.altitude = (float(v) for v in lla[:3])
-    return fix
-
-
 class TerrainViz(GraphMember):
 
     def __init__(self):
@@ -131,71 +129,55 @@ class TerrainViz(GraphMember):
         viz_topic = param(self, "terrain_viz_topic", "/viz/scene/terrain")
 
         self.scene_pub = self.create_publisher(SceneUpdate, viz_topic, LATCHED_QOS)
-        self.local_fix = None
-        self.published_stamp = 0
+        # The model as it was last built, and the mesh file it was built from.
+        # The scene moves far more often than it is rebuilt, and a move needs
+        # the bytes rather than the COLLADA parse and the image behind them.
+        self.model_bytes = None
+        self.model_note = ""
+        self.scene_origin_lla = None
+        # The mtime the held model was built from. No file has been read yet,
+        # and an mtime never takes this value.
+        self.model_stamp = 0
 
         if self.mesh_path is None or self.surface_path is None:
+            self.ground = None
             self.get_logger().warn(
                 "no terrain mesh, so the 3D panel shows no ground. A scene "
                 "names one; an aircraft outside a built scene does not.")
             self.scene_pub.publish(SceneUpdate(deletions=[], entities=[]))
         else:
-            self.create_subscription(NavSatFix, local_fix_topic,
-                                     self.local_fix_cb, reliable_qos)
+            self.ground = SceneGround(self, self.REFERENCE_FRAME, local_fix_topic,
+                                      self.geoid_height)
             self.create_timer(RELOAD_CHECK_S, self.publish_when_changed)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Terrain visualization initialized!")
 
-    def local_fix_cb(self, msg: NavSatFix) -> None:
-        """The scene is placed against this fix, so a home that moves takes
-        the terrain with it."""
-        if self.local_fix is not None and self.moved(msg) < HOME_MOVE_M:
-            return
-        self.local_fix = msg
-        self.published_stamp = 0
-        self.publish_when_changed()
-
-    def moved(self, fix: NavSatFix) -> float:
-        east, north, up = lla_2_enu(self.local_fix, fix, ignore_alt=False)
-        return math.sqrt(east ** 2 + north ** 2 + up ** 2)
-
     def publish_when_changed(self) -> None:
-        if self.local_fix is None:
-            self.get_logger().warn(
-                f"no fix on {self.REFERENCE_FRAME} yet, so the terrain waits. "
-                f"Placed against the wrong home it would lie metres off the "
-                f"ground it belongs to.", throttle_duration_sec=10.0)
-            return
+        """Draw the scene again when its mesh changes, and when the ground it
+        stands on moves under it. The mesh is read once for each change and
+        the ground is looked at every tick, because the ground moves far more
+        often than the scene is rebuilt."""
         try:
             stamp = self.mesh_path.stat().st_mtime_ns
         except OSError:
             stamp = None
-        if stamp == self.published_stamp:
+        if stamp != self.model_stamp:
+            self.model_stamp = stamp
+            self.ground.drawn_at = None
+            if stamp is None:
+                self.get_logger().info(
+                    f"no terrain mesh at {self.mesh_path}. The 3D panel shows "
+                    f"no ground until scenegen build writes it.")
+            if not self.build_model():
+                self.scene_pub.publish(SceneUpdate(deletions=[], entities=[]))
+                return
+        if self.model_bytes is None:
             return
-        self.published_stamp = stamp
-        if stamp is None:
-            self.get_logger().info(
-                f"no terrain mesh at {self.mesh_path}. The 3D panel shows no "
-                f"ground until scenegen build writes it.")
-        self.scene_pub.publish(self.terrain())
-
-    def scene_offset(self):
-        """Where the scene centre sits in the reference frame. The same
-        translation buildings_viz applies, so the ground and the buildings on
-        it stand in one place."""
-        scene = json.loads(self.surface_path.read_text())
-        origin = scene.get("origin_lla")
-        if not origin or len(origin) < 3:
-            raise ValueError(f"{self.surface_path} carries no origin_lla")
-        return lla_2_enu(self.local_fix, self.scene_origin(origin), ignore_alt=False)
-
-    def scene_origin(self, origin) -> NavSatFix:
-        """The scene centre as a fix in the datum the vehicle reports. A scene
-        is anchored above mean sea level, because elevation data is, and a
-        NavSatFix is above the ellipsoid. The two are a geoid separation apart,
-        33 m in Maryland, which is the whole height of what is drawn."""
-        latitude, longitude, mean_sea_level = (float(v) for v in origin[:3])
-        return as_fix((latitude, longitude, mean_sea_level + self.geoid_height))
+        offset = self.ground.offset(self.scene_origin_lla)
+        if not self.ground.moved(offset):
+            return
+        self.ground.drawn_at = offset
+        self.scene_pub.publish(self.placed(offset))
 
     def mesh(self):
         """The terrain as a grid of positions and texture coordinates."""
@@ -216,40 +198,69 @@ class TerrainViz(GraphMember):
         image.convert("RGB").save(packed, "JPEG", quality=88)
         return packed.getvalue(), image.size
 
-    def model(self, positions, uvs):
-        """The terrain as one textured model, in scene centre coordinates. The
-        offset goes on the primitive's pose, so a home fix that moves needs no
-        new model."""
-        rows, columns = positions.shape[:2]
-        corners = np.arange(rows * columns).reshape(rows, columns)
-        # Two triangles for each cell, wound counter-clockwise from above.
-        upper_left = corners[:-1, :-1]
-        upper_right = corners[:-1, 1:]
-        lower_left = corners[1:, :-1]
-        lower_right = corners[1:, 1:]
-        indices = np.stack([upper_left, upper_right, lower_right,
-                            upper_left, lower_right, lower_left], axis=-1).ravel()
-        image, size = self.texture()
-        model = gltf.textured_mesh(positions.reshape(-1, 3), uvs.reshape(-1, 2),
-                                   indices, image, "image/jpeg")
-        return model, len(indices) // 3, size
+    def build_model(self) -> bool:
+        """Read the mesh and its image and hold them as one textured model, in
+        scene centre coordinates. False where the mesh cannot be drawn, which
+        clears the panel.
 
-    def terrain(self) -> SceneUpdate:
-        if not self.mesh_path.is_file():
-            return SceneUpdate(deletions=[], entities=[])
+        Where it stands rides on the primitive's pose, so a ground that moves
+        under the scene needs no new model.
+        """
+        self.model_bytes = None
+        self.scene_origin_lla = self.scene_origin()
+        if self.scene_origin_lla is None or not self.mesh_path.is_file():
+            return False
         try:
-            offset = self.scene_offset()
             positions, uvs = self.mesh()
-            model, triangles, size = self.model(positions, uvs)
+            rows, columns = positions.shape[:2]
+            corners = np.arange(rows * columns).reshape(rows, columns)
+            # Two triangles for each cell, wound counter-clockwise from above.
+            upper_left = corners[:-1, :-1]
+            upper_right = corners[:-1, 1:]
+            lower_left = corners[1:, :-1]
+            lower_right = corners[1:, 1:]
+            indices = np.stack([upper_left, upper_right, lower_right,
+                                upper_left, lower_right, lower_left],
+                               axis=-1).ravel()
+            image, size = self.texture()
+            self.model_bytes = gltf.textured_mesh(
+                positions.reshape(-1, 3), uvs.reshape(-1, 2), indices, image,
+                "image/jpeg")
         except (OSError, ValueError, ElementTree.ParseError) as error:
+            self.model_bytes = None
             self.get_logger().error(f"cannot draw {self.mesh_path}: {error}")
-            return SceneUpdate(deletions=[], entities=[])
+            return False
+        self.model_note = (f"{len(indices) // 3} triangles and a "
+                           f"{size[0]}x{size[1]} image from "
+                           f"{self.mesh_path.name}, "
+                           f"{len(self.model_bytes) // 1024} kB")
+        return True
 
-        east, north, up = offset
-        primitive = ModelPrimitive(media_type="model/gltf-binary", data=list(model))
-        primitive.pose.position.x = float(east)
-        primitive.pose.position.y = float(north)
-        primitive.pose.position.z = float(up)
+    def scene_origin(self):
+        """Where the scene centre sits on the Earth, as its surface file holds
+        it. None when the file cannot say, which draws nothing."""
+        try:
+            scene = json.loads(self.surface_path.read_text())
+        except (OSError, json.JSONDecodeError) as error:
+            self.get_logger().error(f"cannot read {self.surface_path}: {error}")
+            return None
+        origin = scene.get("origin_lla")
+        if not origin or len(origin) < 3:
+            self.get_logger().error(
+                f"{self.surface_path} carries no origin_lla, so the terrain "
+                f"cannot be placed against {self.REFERENCE_FRAME}. Build the "
+                f"scene again.")
+            return None
+        return origin
+
+    def placed(self, offset) -> SceneUpdate:
+        """The held model standing at `offset` in the reference frame."""
+        east, north, up = (float(value) for value in offset)
+        primitive = ModelPrimitive(media_type="model/gltf-binary",
+                                   data=list(self.model_bytes))
+        primitive.pose.position.x = east
+        primitive.pose.position.y = north
+        primitive.pose.position.z = up
         primitive.pose.orientation = Quaternion(w=1.0)
         primitive.scale = Vector3(x=1.0, y=1.0, z=1.0)
         primitive.color = Color(r=1.0, g=1.0, b=1.0, a=self.alpha)
@@ -258,8 +269,6 @@ class TerrainViz(GraphMember):
                              frame_locked=True, models=[primitive])
         entity.timestamp = self.get_clock().now().to_msg()
         self.get_logger().info(
-            f"{triangles} triangles and a {size[0]}x{size[1]} image from "
-            f"{self.mesh_path.name}, {len(model) // 1024} kB, in frame "
-            f"{self.REFERENCE_FRAME}, scene centre at "
-            f"({east:+.1f}, {north:+.1f}, {up:+.1f}) m")
+            f"{self.model_note}, in frame {self.REFERENCE_FRAME}, scene centre "
+            f"at ({east:+.3f}, {north:+.3f}, {up:+.3f}) m")
         return SceneUpdate(deletions=[], entities=[entity])

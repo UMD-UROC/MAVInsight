@@ -32,6 +32,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
 from models.qos_profiles import reliable_qos
+from models.scene_ground import FrameSurvey
 
 try:
     from foxglove_msgs.msg import GeoJSON
@@ -82,6 +83,9 @@ class FootprintViz(GraphMember):
         self.color = ColorRGBA(r=(r / 255.0), g=(g / 255.0), b=(b / 255.0), a=a)
 
         self.local_fix = None
+        # The outline arrives as WGS84 measured from the surveyed frame, so
+        # coming back into that frame takes the survey off again.
+        self.survey = FrameSurvey(self, self.LOC_FRAME)
         self.create_subscription(NavSatFix, local_fix_topic, self.local_fix_cb, reliable_qos)
         self.create_subscription(CameraFOV, fov_topic, self.fov_cb, reliable_qos)
         self.marker_pub = self.create_publisher(MarkerArray, viz_topic, reliable_qos)
@@ -111,7 +115,9 @@ class FootprintViz(GraphMember):
         # ignore_alt must stay False: the default substitutes the reference's
         # altitude for the point's, which would flatten the outline onto the
         # frame origin's height instead of draping it over the ground.
-        points = [Point(x=e, y=n, z=u) for e, n, u in
+        correction = self.survey.correction()
+        points = [Point(x=e - correction[0], y=n - correction[1],
+                        z=u - correction[2]) for e, n, u in
                   (lla_2_enu(self.local_fix, fix, ignore_alt=False)
                    for fix in msg.fov_polygon)]
         outline = Marker(

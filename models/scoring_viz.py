@@ -18,6 +18,10 @@ bubble is a hit by construction.
 A target that is in view and that no estimate names is the false negative. It
 has no estimate to mark, so it appears as its bubble turning red.
 
+Every view empties itself rather than freezing the last hit. A Map layer with
+nothing this tick goes out as an empty collection, and the image boxes come off
+the picture once the frame they were measured on is too old to be under them.
+
 Subscribes
     <verdicts_topic>        vision_msgs/Detection3DArray
     <target_status_topic>   vision_msgs/Detection3DArray
@@ -53,6 +57,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from models.frame_utils import enu_2_lla
 from models.graph_member import GraphMember
 from models.qos_profiles import reliable_qos, viz_qos
+from models.scene_ground import FrameSurvey
 
 try:
     from foxglove_msgs.msg import (Color, GeoJSON, ImageAnnotations, Point2,
@@ -69,6 +74,20 @@ LATCHED_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=1,
 )
+
+
+# ----------------------------------------------------------------- tunables
+# How long the boxes of one frame stay on the picture. They are pixels of the
+# frame the detector inferenced, and the live video under them keeps moving, so
+# they say a wrong thing as soon as that frame is gone. The detector inferences
+# about fifteen frames a second and every one of them reaches ROS, so silence
+# this long is the detector reporting nothing, not a link that dropped.
+#
+# The localized stream carries only the frames that held something, so a frame
+# with nothing in it arrives here as silence rather than as an empty message.
+ANNOTATION_TIMEOUT_S = 1.0
+# How often the node asks whether the boxes are still current.
+ANNOTATION_SWEEP_S = 0.2
 
 
 # --------------------------------------------------------------- appearance
@@ -320,6 +339,9 @@ class ScoringViz(GraphMember):
         # Map panel needs longitude and latitude, and the compute node already
         # publishes this fix for every other view of the same frame.
         self.local_fix = None
+        # Frame coordinates go out to the Map panel as WGS84, so the survey
+        # goes back on: the same correction umd_uas/footprint.py applies.
+        self.survey = FrameSurvey(self, param(self, "localization_frame", "map"))
 
         self.create_subscription(Detection3DArray, verdicts_topic,
                                  self.verdicts_cb, reliable_qos)
@@ -334,9 +356,14 @@ class ScoringViz(GraphMember):
         self.geojson_pub = {}
         self.ring_pub = None
         self.rings_drawn = None
+        # Whether boxes are on the picture now, and when the frame they were
+        # measured on arrived.
+        self.boxes_drawn = False
+        self.boxes_drawn_sec = 0.0
         if HAVE_FOXGLOVE:
             self.annotation_pub = self.create_publisher(
                 ImageAnnotations, annotations_topic, viz_qos)
+            self.create_timer(ANNOTATION_SWEEP_S, self.expire_boxes)
             self.create_subscription(TargetBoxArray, localization_topic,
                                      self.localizations_cb, reliable_qos)
             self.create_subscription(NavSatFix, local_fix_topic,
@@ -382,6 +409,23 @@ class ScoringViz(GraphMember):
     def local_fix_cb(self, msg: NavSatFix) -> None:
         self.local_fix = msg
 
+    def now_sec(self) -> float:
+        return self.get_clock().now().nanoseconds / 1e9
+
+    def expire_boxes(self) -> None:
+        """Take the last boxes off the picture once their frame is too old.
+
+        An empty ImageAnnotations is how a panel is told there is nothing to
+        draw. Saying nothing leaves the last boxes standing on live video,
+        which reads as a detection of something that is no longer there.
+        """
+        if not self.boxes_drawn:
+            return
+        if self.now_sec() - self.boxes_drawn_sec < ANNOTATION_TIMEOUT_S:
+            return
+        self.annotation_pub.publish(ImageAnnotations())
+        self.boxes_drawn = False
+
     def publish_map(self, msg: Detection3DArray) -> None:
         """Every Map panel layer, every tick.
 
@@ -395,6 +439,7 @@ class ScoringViz(GraphMember):
                 "no local fix yet, so the Map panel gets no verdicts",
                 throttle_duration_sec=10.0)
             return
+        correction = self.survey.correction()
         features = {kind: [] for kind in self.geojson_pub}
         for detection in msg.detections:
             kind = (detection.results[0].hypothesis.class_id
@@ -402,8 +447,9 @@ class ScoringViz(GraphMember):
             if kind not in features:
                 continue
             center = detection.bbox.center.position
-            latitude, longitude, _ = enu_2_lla(self.local_fix, center.x,
-                                               center.y, center.z)
+            latitude, longitude, _ = enu_2_lla(
+                self.local_fix, center.x + correction[0],
+                center.y + correction[1], center.z + correction[2])
             features[kind].append(map_feature(detection, latitude, longitude))
         for kind, publisher in self.geojson_pub.items():
             publisher.publish(GeoJSON(geojson=json.dumps(
@@ -431,6 +477,7 @@ class ScoringViz(GraphMember):
         """A ring around every known target, in the color of its status."""
         if self.ring_pub is None or self.local_fix is None:
             return
+        correction = self.survey.correction()
         features = []
         for detection in msg.detections:
             status = (detection.results[0].hypothesis.class_id
@@ -441,9 +488,9 @@ class ScoringViz(GraphMember):
                 angle = 2.0 * math.pi * step / TARGET_RING_POINTS
                 latitude, longitude, _ = enu_2_lla(
                     self.local_fix,
-                    center.x + TARGET_RING_RADIUS_M * math.cos(angle),
-                    center.y + TARGET_RING_RADIUS_M * math.sin(angle),
-                    center.z)
+                    center.x + TARGET_RING_RADIUS_M * math.cos(angle) + correction[0],
+                    center.y + TARGET_RING_RADIUS_M * math.sin(angle) + correction[1],
+                    center.z + correction[2])
                 ring.append([longitude, latitude])
             features.append(ring_feature(detection.id, status, ring))
         drawn = json.dumps({"type": "FeatureCollection", "features": features})
@@ -461,6 +508,10 @@ class ScoringViz(GraphMember):
         The annotations carry the frame's stamp, not the clock's: a stamp taken
         here would slide the boxes off their frame whenever a recording is
         scrubbed.
+
+        A frame with no boxes goes out as an empty message, which takes the
+        last boxes off the panel. `expire_boxes` says the same thing on a
+        clock, for the frames that reach nobody because they held nothing.
         """
         out = ImageAnnotations()
         for index, box in enumerate(msg.uav_target_boxes):
@@ -497,3 +548,5 @@ class ScoringViz(GraphMember):
             out.texts.append(label)
 
         self.annotation_pub.publish(out)
+        self.boxes_drawn = bool(out.points or out.texts)
+        self.boxes_drawn_sec = self.now_sec()

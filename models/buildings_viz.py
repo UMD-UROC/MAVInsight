@@ -20,12 +20,16 @@ whole scene, so a building that left it also leaves the display.
 The file measures every coordinate from the scene centre, and the model goes
 in a frame centred on the vehicle's home position. Those are two different
 points: the simulator parks each vehicle a few metres from the one before it,
-so only the first vehicle takes off at the scene centre. The file carries
-`origin_lla`, which IS the scene centre, so this node measures it against the
-home fix and puts that on the model's pose. The launch then gives it the
-vehicle's own home frame and no launch has to know where a vehicle stands. A
-roof drawn any other way disagrees with the terrain the same building is
-localized against.
+so only the first vehicle takes off at the scene centre. `models/scene_ground.py`
+works out where one sits in the other and terrain_viz reads the same answer,
+so the ground and the buildings standing on it can never disagree. The launch
+gives this node the vehicle's own home frame and no launch has to know where a
+vehicle stands.
+
+That offset is watched rather than read once. PX4 moves the home position when
+the vehicle arms, and `umd_uas/terrain.py` meets a roof against the fix as it
+is now, so a roof placed at startup and held drifts away from the roof a
+detection lands on.
 
 Nothing goes out before the first home fix. Buildings at the wrong offset look
 correct and are wrong, which is worse than an empty panel.
@@ -65,13 +69,11 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
 # ROS2 message imports
 from foxglove_msgs.msg import Color, ModelPrimitive, SceneEntity, SceneUpdate
 from geometry_msgs.msg import Quaternion, Vector3
-from sensor_msgs.msg import NavSatFix
 
 # MAVInsight imports
 from models import gltf
-from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
-from models.qos_profiles import reliable_qos
+from models.scene_ground import SceneGround
 
 
 # --------------------------------------------------------------- appearance
@@ -86,13 +88,10 @@ ENTITY_ID = "scene_buildings"
 DEFAULT_SCENE_SIDE_M = 600.0
 DEFAULT_SURFACE_COLOR = (0.72, 0.72, 0.74)
 SURFACE_ALPHA = 1.0
-# How often to look for a changed file. One stat call costs nothing, and a
-# rebuilt scene reaches the panel within this long.
+# How often to look for a changed file, and for the ground moving under the
+# scene. Both checks are a stat call and a subtraction, so this is what decides
+# how long an operator waits after a home update or a scene rebuild.
 RELOAD_CHECK_S = 2.0
-# How far the home fix has to move before the scene is drawn again. MAVROS
-# republishes the home position on its own, and jitter under this is not a
-# move that any building can be seen to make.
-HOME_MOVE_M = 1.0
 
 # The panel needs every building from the moment it connects, and the scene
 # changes only when someone rebuilds it, so the last message is the whole
@@ -354,12 +353,6 @@ def roof_surfaces(building):
     return [(float(x), float(y), float(z)) for x, y, z in roof.get("points") or []]
 
 
-def as_fix(lla) -> NavSatFix:
-    """Three numbers from the file as a fix, for the ENU conversion."""
-    return NavSatFix(latitude=float(lla[0]), longitude=float(lla[1]),
-                     altitude=float(lla[2]))
-
-
 class BuildingsViz(GraphMember):
 
     def __init__(self):
@@ -388,56 +381,55 @@ class BuildingsViz(GraphMember):
         viz_topic = param(self, "buildings_viz_topic", "/viz/scene/buildings")
 
         self.scene_pub = self.create_publisher(SceneUpdate, viz_topic, LATCHED_QOS)
-        # Where the frame the model goes in sits on the Earth.
-        self.local_fix = None
-        # No file has been read yet. An mtime never takes this value.
-        self.published_stamp = 0
+        # The model as it was last built, with the line that describes it. The
+        # scene moves far more often than it is rebuilt, and a move needs the
+        # bytes rather than the triangulation and the image behind them.
+        self.model_bytes = None
+        self.model_note = ""
+        self.scene_origin_lla = None
+        # The mtime the held model was built from. No file has been read yet,
+        # and an mtime never takes this value.
+        self.model_stamp = 0
 
         if self.path is None:
+            self.ground = None
             self.get_logger().warn(
                 "no buildings_file, so the 3D panel shows no structures. A "
                 "scene names one; an aircraft outside a built scene does not.")
             self.scene_pub.publish(self.empty())
         else:
-            self.create_subscription(NavSatFix, local_fix_topic,
-                                     self.local_fix_cb, reliable_qos)
+            self.ground = SceneGround(self, self.REFERENCE_FRAME, local_fix_topic,
+                                      self.geoid_height)
             self.create_timer(RELOAD_CHECK_S, self.publish_when_changed)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Buildings visualization initialized!")
 
-    def local_fix_cb(self, msg: NavSatFix) -> None:
-        """The scene is placed against this fix, so a home that moves takes
-        the buildings with it."""
-        if self.local_fix is not None and self.moved(msg) < HOME_MOVE_M:
-            return
-        self.local_fix = msg
-        self.published_stamp = 0
-        self.publish_when_changed()
-
-    def moved(self, fix: NavSatFix) -> float:
-        """How far a fix is from the one the scene stands against, in metres."""
-        east, north, up = lla_2_enu(self.local_fix, fix, ignore_alt=False)
-        return math.sqrt(east ** 2 + north ** 2 + up ** 2)
-
     def publish_when_changed(self) -> None:
-        if self.local_fix is None:
-            self.get_logger().warn(
-                f"no fix on {self.REFERENCE_FRAME} yet, so the buildings wait. "
-                f"Placed against the wrong home they would stand metres off "
-                f"the ground they belong to.", throttle_duration_sec=10.0)
-            return
+        """Draw the scene again when its file changes, and when the ground it
+        stands on moves under it. The file is read once for each change and
+        the ground is looked at every tick, because the ground moves far more
+        often than the scene is rebuilt."""
         try:
             stamp = self.path.stat().st_mtime_ns
         except OSError:
             stamp = None
-        if stamp == self.published_stamp:
+        if stamp != self.model_stamp:
+            self.model_stamp = stamp
+            self.ground.drawn_at = None
+            if stamp is None:
+                self.get_logger().info(
+                    f"no buildings file at {self.path}. The 3D panel shows "
+                    f"none until scenegen build writes it next to the world.")
+            if not self.build_model():
+                self.scene_pub.publish(self.empty())
+                return
+        if self.model_bytes is None:
             return
-        self.published_stamp = stamp
-        if stamp is None:
-            self.get_logger().info(
-                f"no buildings file at {self.path}. The 3D panel shows none "
-                f"until scenegen build writes it next to the world.")
-        self.scene_pub.publish(self.buildings())
+        offset = self.ground.offset(self.scene_origin_lla)
+        if not self.ground.moved(offset):
+            return
+        self.ground.drawn_at = offset
+        self.scene_pub.publish(self.placed(offset))
 
     def empty(self) -> SceneUpdate:
         """Nothing to draw, which clears the panel."""
@@ -455,16 +447,24 @@ class BuildingsViz(GraphMember):
         image.convert("RGB").save(packed, "JPEG", quality=88)
         return packed.getvalue(), image.size
 
-    def buildings(self) -> SceneUpdate:
-        """The buildings on disk, as one textured model. With no usable file
-        an empty update goes out, which clears the panel."""
+    def build_model(self) -> bool:
+        """Read the buildings on disk and hold them as one textured model, in
+        scene centre coordinates. False where the file cannot be drawn, which
+        clears the panel.
+
+        The model is the scene as the file wrote it. Where it stands rides on
+        the primitive's pose, so a ground that moves under it needs no new
+        model.
+        """
+        self.model_bytes = None
+        self.scene_origin_lla = None
         if not self.path.is_file():
-            return self.empty()
+            return False
         try:
             scene = json.loads(self.path.read_text())
         except (OSError, json.JSONDecodeError) as error:
             self.get_logger().error(f"cannot read {self.path}: {error}")
-            return self.empty()
+            return False
 
         surfaces = {LEVEL_FORMAT: level_surfaces,
                     ROOF_FORMAT: roof_surfaces}.get(scene.get("format"))
@@ -473,7 +473,7 @@ class BuildingsViz(GraphMember):
                 f"{self.path} carries format {scene.get('format')!r}, and this "
                 f"node reads {LEVEL_FORMAT!r} or {ROOF_FORMAT!r}. Build the "
                 f"scene again.")
-            return self.empty()
+            return False
 
         origin = scene.get("origin_lla")
         if not origin or len(origin) < 3:
@@ -481,12 +481,7 @@ class BuildingsViz(GraphMember):
                 f"{self.path} carries no origin_lla, so the scene cannot be "
                 f"placed against {self.REFERENCE_FRAME}. Build the scene "
                 f"again.")
-            return self.empty()
-        # Where the scene centre sits in the reference frame. The same
-        # translation umd_uas/terrain.py applies to reach the tile, so a roof
-        # here stands on the surface a ray meets there. It rides on the pose,
-        # so the model itself is the scene as the file wrote it.
-        offset = lla_2_enu(self.local_fix, self.scene_origin(origin), ignore_alt=False)
+            return False
 
         points = []
         drawn = 0
@@ -503,18 +498,28 @@ class BuildingsViz(GraphMember):
                 points += corners
                 drawn += 1
         if not points:
-            return self.empty()
+            return False
 
         image, size = self.texture()
-        model = gltf.textured_mesh(
+        self.model_bytes = gltf.textured_mesh(
             np.asarray(points, dtype=float), satellite_uvs(points, self.side_m),
             np.arange(len(points), dtype=np.uint32), image, "image/jpeg")
+        self.scene_origin_lla = origin
+        self.model_note = (f"{drawn} buildings, {len(points) // 3} triangles "
+                           f"and a {size[0]}x{size[1]} image, from {self.path}, "
+                           f"{len(self.model_bytes) // 1024} kB")
+        return True
 
-        east, north, up = offset
-        primitive = ModelPrimitive(media_type="model/gltf-binary", data=list(model))
-        primitive.pose.position.x = float(east)
-        primitive.pose.position.y = float(north)
-        primitive.pose.position.z = float(up)
+    def placed(self, offset) -> SceneUpdate:
+        """The held model standing at `offset` in the reference frame. The
+        same translation umd_uas/terrain.py applies to reach the tile, so a
+        roof here stands on the surface a ray meets there."""
+        east, north, up = (float(value) for value in offset)
+        primitive = ModelPrimitive(media_type="model/gltf-binary",
+                                   data=list(self.model_bytes))
+        primitive.pose.position.x = east
+        primitive.pose.position.y = north
+        primitive.pose.position.z = up
         primitive.pose.orientation = Quaternion(w=1.0)
         primitive.scale = Vector3(x=1.0, y=1.0, z=1.0)
         primitive.color = Color(r=1.0, g=1.0, b=1.0, a=SURFACE_ALPHA)
@@ -523,16 +528,6 @@ class BuildingsViz(GraphMember):
                              frame_locked=True, models=[primitive])
         entity.timestamp = self.get_clock().now().to_msg()
         self.get_logger().info(
-            f"{drawn} buildings, {len(points) // 3} triangles and a "
-            f"{size[0]}x{size[1]} image, from {self.path} in frame "
-            f"{self.REFERENCE_FRAME}, {len(model) // 1024} kB, scene centre at "
-            f"({east:+.1f}, {north:+.1f}, {up:+.1f}) m")
+            f"{self.model_note}, in frame {self.REFERENCE_FRAME}, scene centre "
+            f"at ({east:+.3f}, {north:+.3f}, {up:+.3f}) m")
         return SceneUpdate(deletions=[], entities=[entity])
-
-    def scene_origin(self, origin) -> NavSatFix:
-        """The scene centre as a fix in the datum the vehicle reports. A scene
-        is anchored above mean sea level, because elevation data is, and a
-        NavSatFix is above the ellipsoid. The two are a geoid separation apart,
-        33 m in Maryland, which is the whole height of what is drawn."""
-        latitude, longitude, mean_sea_level = (float(v) for v in origin[:3])
-        return as_fix((latitude, longitude, mean_sea_level + self.geoid_height))
