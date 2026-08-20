@@ -12,11 +12,12 @@ needs the georeference the scene no longer ships. Its vertices are the same
 heights the surface file holds, so what is drawn here is the surface a ray is
 localized against.
 
-The colour goes on the vertices rather than the image on the triangles.
-Foxglove draws a triangle list and no texture, so the mesh is coloured by
-sampling the image at each vertex, and the panel interpolates between them. The
-detail is the mesh's, not the image's: a stride of one over a 600 m scene
-samples every 4.7 m, which is a road and a roof and a field, and not a car.
+The image goes over the mesh rather than onto its vertices. Foxglove draws a
+triangle list and no texture, so the ground arrives as a model instead: a
+SceneUpdate carries a ModelPrimitive, and a ModelPrimitive carries the model's
+bytes, so nothing has to serve a file and nothing has to reach a URL. The
+detail is then the image's rather than the mesh's, which over a 600 m scene is
+half a metre a pixel instead of five.
 
 The mesh measures every coordinate from the scene centre and the markers go in
 a frame centred on the vehicle's home position, the same two points
@@ -35,6 +36,7 @@ Publishes
 """
 
 # python imports
+import io
 import json
 import math
 import xml.etree.ElementTree as ElementTree
@@ -48,17 +50,17 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 
 # ROS2 message imports
-from geometry_msgs.msg import Point, Vector3
+from foxglove_msgs.msg import Color, ModelPrimitive, SceneEntity, SceneUpdate
+from geometry_msgs.msg import Quaternion, Vector3
 from sensor_msgs.msg import NavSatFix
-from std_msgs.msg import ColorRGBA, Header
-from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
+from models import gltf
 from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
 
 COLLADA = "{http://www.collada.org/2005/11/COLLADASchema}"
-MARKER_NAMESPACE = "scene_terrain"
+ENTITY_ID = "scene_terrain"
 # How far the home fix moves before the scene is placed again.
 HOME_MOVE_M = 1.0
 RELOAD_CHECK_S = 5.0
@@ -118,13 +120,17 @@ class TerrainViz(GraphMember):
         # One vertex in every stride, each way. The message carries six values
         # for every triangle corner, so a stride of two costs a quarter of it.
         self.stride = max(1, int(param(self, "terrain_stride", 1)))
+        # The satellite image, at most this wide. The scene is 600 m across, so
+        # 2048 is under a third of a metre a pixel and the model stays small
+        # enough to sit in one message.
+        self.texture_px = int(param(self, "terrain_texture_px", 2048))
         self.alpha = float(param(self, "terrain_alpha", 1.0))
         self.geoid_height = float(param(self, "geoid_height_m", 0.0))
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "terrain_viz_topic", "/viz/scene/terrain")
 
-        self.marker_pub = self.create_publisher(MarkerArray, viz_topic, LATCHED_QOS)
+        self.scene_pub = self.create_publisher(SceneUpdate, viz_topic, LATCHED_QOS)
         self.local_fix = None
         self.published_stamp = 0
 
@@ -132,7 +138,7 @@ class TerrainViz(GraphMember):
             self.get_logger().warn(
                 "no terrain mesh, so the 3D panel shows no ground. A scene "
                 "names one; an aircraft outside a built scene does not.")
-            self.marker_pub.publish(MarkerArray(markers=[self.clear_all()]))
+            self.scene_pub.publish(SceneUpdate(deletions=[], entities=[]))
         else:
             self.create_subscription(NavSatFix, local_fix_topic,
                                      self.local_fix_cb, reliable_qos)
@@ -171,11 +177,7 @@ class TerrainViz(GraphMember):
             self.get_logger().info(
                 f"no terrain mesh at {self.mesh_path}. The 3D panel shows no "
                 f"ground until scenegen build writes it.")
-        self.marker_pub.publish(self.terrain())
-
-    def clear_all(self) -> Marker:
-        return Marker(header=Header(frame_id=self.REFERENCE_FRAME),
-                      action=Marker.DELETEALL)
+        self.scene_pub.publish(self.terrain())
 
     def scene_offset(self):
         """Where the scene centre sits in the reference frame. The same
@@ -204,71 +206,60 @@ class TerrainViz(GraphMember):
         return (positions.reshape(side, side, 3)[::self.stride, ::self.stride],
                 uvs.reshape(side, side, 2)[::self.stride, ::self.stride])
 
-    def colors(self, uvs):
-        """The satellite image sampled at each vertex. Texture space puts v=0
-        at the image bottom and pixel rows count from the top."""
-        if self.texture_path is None or not self.texture_path.is_file():
-            self.get_logger().warn(
-                f"no satellite image at {self.texture_path}, so the terrain "
-                f"is drawn in one colour.")
-            return np.full(uvs.shape[:2] + (3,), 0.5)
-        image = np.asarray(Image.open(self.texture_path).convert("RGB"),
-                           dtype=np.float64) / 255.0
-        height, width = image.shape[:2]
-        columns = np.clip((uvs[..., 0] * width).astype(int), 0, width - 1)
-        rows = np.clip(((1.0 - uvs[..., 1]) * height).astype(int), 0, height - 1)
-        return image[rows, columns]
+    def texture(self):
+        """The satellite image, no wider than asked for. A model carries its
+        image, so a scene's full raster would go out on every publish."""
+        image = Image.open(self.texture_path)
+        if max(image.size) > self.texture_px:
+            image.thumbnail((self.texture_px, self.texture_px))
+        packed = io.BytesIO()
+        image.convert("RGB").save(packed, "JPEG", quality=88)
+        return packed.getvalue(), image.size
 
-    def terrain(self) -> MarkerArray:
-        markers = [self.clear_all()]
+    def model(self, positions, uvs):
+        """The terrain as one textured model, in scene centre coordinates. The
+        offset goes on the primitive's pose, so a home fix that moves needs no
+        new model."""
+        rows, columns = positions.shape[:2]
+        corners = np.arange(rows * columns).reshape(rows, columns)
+        # Two triangles for each cell, wound counter-clockwise from above.
+        upper_left = corners[:-1, :-1]
+        upper_right = corners[:-1, 1:]
+        lower_left = corners[1:, :-1]
+        lower_right = corners[1:, 1:]
+        indices = np.stack([upper_left, upper_right, lower_right,
+                            upper_left, lower_right, lower_left], axis=-1).ravel()
+        image, size = self.texture()
+        model = gltf.textured_mesh(positions.reshape(-1, 3), uvs.reshape(-1, 2),
+                                   indices, image, "image/jpeg")
+        return model, len(indices) // 3, size
+
+    def terrain(self) -> SceneUpdate:
         if not self.mesh_path.is_file():
-            return MarkerArray(markers=markers)
+            return SceneUpdate(deletions=[], entities=[])
         try:
             offset = self.scene_offset()
             positions, uvs = self.mesh()
-            colors = self.colors(uvs)
+            model, triangles, size = self.model(positions, uvs)
         except (OSError, ValueError, ElementTree.ParseError) as error:
             self.get_logger().error(f"cannot draw {self.mesh_path}: {error}")
-            return MarkerArray(markers=markers)
+            return SceneUpdate(deletions=[], entities=[])
 
-        points, shades = self.triangles(positions, colors, offset)
-        markers.append(self.surface_marker(points, shades))
-        self.get_logger().info(
-            f"{len(points) // 3} triangles from {self.mesh_path.name}, every "
-            f"{self.stride} vertex, in frame {self.REFERENCE_FRAME}, scene "
-            f"centre at ({offset[0]:+.1f}, {offset[1]:+.1f}, {offset[2]:+.1f}) m")
-        return MarkerArray(markers=markers)
-
-    def triangles(self, positions, colors, offset):
-        """Two triangles for each cell, wound counter-clockwise so every one
-        faces the camera that looks down on it."""
         east, north, up = offset
-        points, shades = [], []
-        rows, columns = positions.shape[:2]
-        for j in range(rows - 1):
-            for i in range(columns - 1):
-                corners = ((j, i), (j, i + 1), (j + 1, i + 1),
-                           (j, i), (j + 1, i + 1), (j + 1, i))
-                for row, column in corners:
-                    x, y, z = positions[row, column]
-                    points.append(Point(x=x + east, y=y + north, z=z + up))
-                    red, green, blue = colors[row, column]
-                    shades.append(ColorRGBA(r=float(red), g=float(green),
-                                            b=float(blue), a=self.alpha))
-        return points, shades
+        primitive = ModelPrimitive(media_type="model/gltf-binary", data=list(model))
+        primitive.pose.position.x = float(east)
+        primitive.pose.position.y = float(north)
+        primitive.pose.position.z = float(up)
+        primitive.pose.orientation = Quaternion(w=1.0)
+        primitive.scale = Vector3(x=1.0, y=1.0, z=1.0)
+        primitive.color = Color(r=1.0, g=1.0, b=1.0, a=self.alpha)
 
-    def surface_marker(self, points, shades) -> Marker:
-        marker = Marker(
-            header=Header(frame_id=self.REFERENCE_FRAME,
-                          stamp=self.get_clock().now().to_msg()),
-            ns=MARKER_NAMESPACE,
-            id=0,
-            type=Marker.TRIANGLE_LIST,
-            action=Marker.ADD,
-            points=points,
-            colors=shades,
-            scale=Vector3(x=1.0, y=1.0, z=1.0),
-            color=ColorRGBA(r=1.0, g=1.0, b=1.0, a=self.alpha),
-            frame_locked=True)
-        marker.pose.orientation.w = 1.0
-        return marker
+        entity = SceneEntity(id=ENTITY_ID, frame_id=self.REFERENCE_FRAME,
+                             frame_locked=True, models=[primitive])
+        entity.timestamp = self.get_clock().now().to_msg()
+        self.get_logger().info(
+            f"{triangles} triangles and a {size[0]}x{size[1]} image from "
+            f"{self.mesh_path.name}, {len(model) // 1024} kB, in frame "
+            f"{self.REFERENCE_FRAME}, scene centre at "
+            f"({east:+.1f}, {north:+.1f}, {up:+.1f}) m")
+        return SceneUpdate(deletions=[], entities=[entity])
