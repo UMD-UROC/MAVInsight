@@ -221,10 +221,13 @@ class Vehicle(FrameMember):
         self.fid_t.header = Header(frame_id=fiducial_frame, stamp=self.get_clock().now().to_msg())
         self.fid_t.child_frame_id = self.HOME_FRAME
 
-        # home -> ekf origin offset, kept static between the sparse home position
-        # updates (mavros can go minutes without republishing home_position/home,
-        # and a dynamic transform stamped only at those updates leaves the whole
-        # chain un-lookupable in between)
+        # home -> ekf origin offset. It is dynamic, because it moves: PX4 moves
+        # home at arm and at an EKF origin reset. A static transform has no time
+        # extent, so a move rewrites the whole past and every lookup already in
+        # flight silently changes answer. It is sent from the pose callback
+        # instead of from home_cb, because mavros can go minutes without
+        # republishing home_position/home and one sample per update leaves the
+        # chain un-lookupable in between.
         self.home_t = None
 
         # seed the tree with the fiducial frame now rather than at the first 10s
@@ -257,7 +260,7 @@ class Vehicle(FrameMember):
     def _static_tfs(self) -> list[TransformStamped]:
         # sent together in one message: the static broadcaster latches with depth 1,
         # so a late joiner only ever sees the last message sent
-        return [self.fid_t] + ([self.home_t] if self.home_t is not None else [])
+        return [self.fid_t]
 
     def update_fiducial(self, msg: TransformStamped):
         """`fiducial_update` IS this vehicle's fiducial -> home edge, applied verbatim.
@@ -312,7 +315,14 @@ class Vehicle(FrameMember):
         # transform
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
             assert isinstance(msg, VehicleOdometry)
-            # TODO: Header needs the timestamp from the PX4 Message. Include when uXRCE is introduced.
+            # msg.timestamp_sample is the true sample instant and is what this
+            # header wants, but it counts microseconds since the flight
+            # controller booted. Nothing here holds the offset from that clock
+            # to the ROS clock, and an unstamped header is worse than a late
+            # one: tf2 keeps one sample at the epoch, rejects every later one,
+            # and the whole tree goes dead with no error. Stamp at receive, the
+            # same instant mavros stamps at, until a time sync gives the offset.
+            head_out.stamp = self.get_clock().now().to_msg()
             pos_in = msg.position
 
             pos_out = self.position_conversion(x_in=float(pos_in[0]), y_in=float(pos_in[1]), z_in=float(pos_in[2]))
@@ -357,12 +367,18 @@ class Vehicle(FrameMember):
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
 
-        # build TF
-        t = TransformStamped(
+        # Every frame this callback builds shares one stamp, so they go out in
+        # one message. Separate sends make one /tf message each and a listener
+        # pays per message.
+        tfs = [TransformStamped(
             header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out
-        )
+        )]
 
-        self.tf_broadcaster.sendTransform(t)
+        # The home offset rides the pose rate so that it has a real time extent.
+        # home_cb only holds the value; this is the one place that sends it.
+        if self.home_t is not None:
+            self.home_t.header.stamp = head_out.stamp
+            tfs.append(self.home_t)
 
         # build PoseStamped for path
         # Path update
@@ -397,7 +413,7 @@ class Vehicle(FrameMember):
         g_ref.child_frame_id = self.gimbal_ref_frame
         g_ref.transform = Transform()
         g_ref.transform.rotation = q_body_ref
-        self.tf_broadcaster.sendTransform(g_ref)
+        tfs.append(g_ref)
 
         # Publish altimeter plane viz. investigation only, not required.
         # bottom_clearance is the height over whatever the rangefinder sees, and
@@ -405,13 +421,20 @@ class Vehicle(FrameMember):
         # flight. Publishing that gives tf2 a NaN translation to reject at the
         # transform rate, so the frame waits for a reading instead.
         if self.ALTITUDE and np.isfinite(self.ALTITUDE.bottom_clearance):
-            alt_t = Transform(translation=tf_out.translation)
-            alt_t.translation.z -= self.ALTITUDE.bottom_clearance
-            self.tf_broadcaster.sendTransform(TransformStamped(
+            # a fresh Vector3, because a message field assigned from another
+            # message holds the same object and lowering z here would lower the
+            # body frame with it
+            tfs.append(TransformStamped(
                 header=head_out,
                 child_frame_id=f"{self.FRAME_NAME}_alt_plane",
-                transform=alt_t
+                transform=Transform(translation=Vector3(
+                    x=tf_out.translation.x,
+                    y=tf_out.translation.y,
+                    z=tf_out.translation.z - self.ALTITUDE.bottom_clearance,
+                ))
             ))
+
+        self.tf_broadcaster.sendTransform(tfs)
 
     def home_cb(self, msg: HomePosition):
         """
@@ -442,15 +465,14 @@ class Vehicle(FrameMember):
             altitude=msg.geo.altitude
         )
         self.home_fix_pub.publish(home_fix)
-        # broadcast as static: the offset is piecewise-constant between home
-        # updates, and a static transform stays valid for lookups at any stamp
-        # (same treatment as the fiducial offset above)
+        # hold the new offset. publish_position sends it at the pose rate, so
+        # the step lands on the first pose after this message and the transforms
+        # already in the buffer keep the value they were looked up with.
         self.home_t = TransformStamped(
             header=Header(stamp=msg.header.stamp, frame_id=self.HOME_FRAME),
             child_frame_id=self.EKF_FRAME,
             transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
         )
-        self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
         (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
         self.ekf_fix_pub.publish(NavSatFix(

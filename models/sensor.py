@@ -25,12 +25,6 @@ from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
-FLAGS_RETRACT = 1
-FLAGS_NEUTRAL = 2
-FLAGS_ROLL_LOCK = 4
-FLAGS_PITCH_LOCK = 8
-FLAGS_YAW_LOCK = 16
-
 class Sensor(FrameMember):
     """Class/Node that defines a sensor and its relation to its parent frame. This class
     defines how and what information will be published to Foxglove for every Sensor (i.e.
@@ -218,25 +212,12 @@ class Gimbal(Sensor):
 
     body_orientation: Quaternion
 
-    retract_commanded: bool
-    neutral_position_commanded: bool
-    roll_lock_commanded: bool
-    pitch_lock_commanded: bool
-    yaw_lock_commanded: bool
-
     # constructors
     def __init__(self):
         super().__init__()
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Ingesting Camera params...")
 
         self.body_orientation = Quaternion()
-
-        # initialize gimbal state variables
-        self.retract_commanded = False
-        self.neutral_position_commanded = False
-        self.roll_lock_commanded = False
-        self.pitch_lock_commanded = False
-        self.yaw_lock_commanded = False
 
         # initialize common gimbal variables
         self.GIMBAL_REF_FRAME_NAME = f"{self.FRAME_NAME}_ref"
@@ -253,11 +234,6 @@ class Gimbal(Sensor):
         else:
             self.default_parameter_warning("orientation_topic")
             self.ORIENTATION_TOPIC = "gimbal_orientation" # TODO: Decide on sensible defaults for the position and orientation topic names
-        if self.has_parameter("command_topic"):
-            self.COMMAND_TOPIC = self.get_parameter("command_topic").get_parameter_value().string_value
-        else:
-            self.default_parameter_warning("command_topic")
-            self.COMMAND_TOPIC = "command_topic"
 
         # body orientation topic TODO: Rename. Gimbal may not always be mounted to body...
         if self.has_parameter("body_orientation_topic"):
@@ -274,8 +250,6 @@ class Gimbal(Sensor):
             case "mavros":
                 attitude_msg_type = mavros_msgs.msg.GimbalDeviceAttitudeStatus
                 body_msg_type = Odometry
-                # only initialize subscriber for attitude command messages for mavros. no px4 message currently supported
-                self.create_subscription(mavros_msgs.msg.GimbalManagerSetAttitude, self.COMMAND_TOPIC, self.update_commanded_state, viz_qos)
             case _:
                 raise ValueError(f"Cannot initialize {self.DISPLAY_NAME} Gimbal viz with message schema: {self.msg_schema}.")
         self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
@@ -317,25 +291,12 @@ class Gimbal(Sensor):
         )
         self.tf_broadcaster.sendTransform(gimbal_tf)
 
-    def update_commanded_state(self, msg: mavros_msgs.msg.GimbalManagerSetAttitude):
-        # TODO: Change this to a marker. I don't think we need a whole frame for the commanded attitude.
-        # Ingest flags
-        flags = int(msg.flags)
-        self.retract_commanded = bool(flags & FLAGS_RETRACT)
-        self.neutral_position_commanded = bool(flags & FLAGS_NEUTRAL)
-        self.roll_lock_commanded = bool(flags & FLAGS_ROLL_LOCK)
-        self.pitch_lock_commanded = bool(flags & FLAGS_PITCH_LOCK)
-        self.yaw_lock_commanded = bool(flags & FLAGS_YAW_LOCK)
-
-        # publish commanded attitude.
-        cmd_tf = TransformStamped(
-            child_frame_id=f"{self.FRAME_NAME}_commanded_attitude",
-            # crazy that this message doesn't include a header or a timestamp
-            header = Header(frame_id=self.GIMBAL_REF_FRAME_NAME),
-            transform = Transform(rotation=frd_2_flu(msg.q))
-        )
-
-        self.tf_broadcaster.sendTransform(cmd_tf)
+    # A _commanded_attitude frame used to be published here from
+    # GimbalManagerSetAttitude. That message carries no header, so every
+    # transform went out stamped at the epoch. tf2 keeps the first sample and
+    # rejects every later one, so the frame could never be looked up at a real
+    # time, and nothing read it. Show the commanded attitude as a Marker if it
+    # is wanted again. It is a reading, not a frame the tree can serve.
 
     def _format(self, tab_depth: int = 0, extra_fields: str = "") -> str:
         t = self._tab_char * (tab_depth + 1)
