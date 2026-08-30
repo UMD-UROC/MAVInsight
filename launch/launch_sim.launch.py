@@ -21,7 +21,11 @@ from launch_ros.actions import Node
 
 PACKAGE = 'mavinsight'
 NAMESPACE = 'viz'
+# The airframe the frame tree is built from. The aircraft's dimensions are in
+# chimera.yaml; the simulator's clone shares its component makeup but not its
+# size, so `sim:=true` reads sim_vehicle.yaml and the sim_* sensors beneath it.
 VEHICLE_CONFIG = 'chimera.yaml'
+SIM_VEHICLE_CONFIG = 'sim_vehicle.yaml'
 
 
 def generate_launch_description():
@@ -33,6 +37,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'model', choices=['v2', 'v3'],
             description='Airframe model. It gives the sensor set.'),
+        DeclareLaunchArgument(
+            'sim', default_value='false', choices=['true', 'false'],
+            description='Build the tree from the simulated airframe\'s '
+                        'dimensions rather than the aircraft\'s.'),
         OpaqueFunction(function=frame_tree),
     ])
 
@@ -40,13 +48,14 @@ def generate_launch_description():
 def frame_tree(context, *args, **kwargs):
     number = int(LaunchConfiguration('uas').perform(context))
     model = LaunchConfiguration('model').perform(context)
+    sim = LaunchConfiguration('sim').perform(context) == 'true'
 
     resources = Path(get_package_share_directory(PACKAGE)) / 'package_resources'
     global_config = str(resources / 'global_node_config.yaml')
 
     nodes = []
     built = set()
-    pending = [VEHICLE_CONFIG]
+    pending = [SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG]
 
     while pending:
         file_name = pending.pop(0)
