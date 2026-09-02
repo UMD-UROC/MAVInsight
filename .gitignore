@@ -1,3 +1,7 @@
 .venv
 /.idea/
 .vscode/
+
+# Python bytecode. colcon builds in place, so these appear next to the sources.
+__pycache__/
+*.py[cod]
