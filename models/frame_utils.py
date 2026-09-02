@@ -29,6 +29,22 @@ R_cam_frd = R.from_matrix(np.array([
     [0, 1, 0],
 ]))
 
+# The earth reference frame of a MAVLink gimbal report is NED. Its FLU-convention
+# counterpart is NWU (x North, y West, z Up), because a rotation that is already
+# relative to a body converts with the axis swap alone (see frd_2_flu). NWU sits
+# 90 degrees from ENU about up, and this rotation is that turn: it takes a vector
+# in NWU to the same vector in ENU.
+R_enu_nwu = R.from_euler('Z', 90, degrees=True)
+
+# camera-optical (x right, y down, z forward) -> FLU body, composed so the bridged conventions
+# bridges stay visible: optical -> FRD -> FLU. Matrix [[0,0,1],[-1,0,0],[0,-1,0]];
+# xyz-extrinsic RPY (-90, 0, -90) deg; quat xyzw (0.5, -0.5, 0.5, -0.5).
+R_cam_flu = R_frd_flu * R_cam_frd
+
+def rot_2_quat(r: R) -> Quaternion:
+    r_x, r_y, r_z, r_w = r.as_quat()
+    return Quaternion(x=float(r_x), y=float(r_y), z=float(r_z), w=float(r_w))
+
 def frd_2_flu(input):
     if isinstance(input, Quaternion):
         r = R.from_quat([input.x, input.y, input.z, input.w])
@@ -67,3 +83,6 @@ def enu_2_lla(ref: NavSatFix, e, n, u):
         e=e, n=n, u=u,
         lat0=ref.latitude, lon0=ref.longitude, h0=ref.altitude
     )
+
+def euler_2_quat(x:float, y:float, z:float, deg:bool=True):
+    return rot_2_quat(R.from_euler('xyz', [x, y, z], degrees=deg))

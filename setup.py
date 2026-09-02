@@ -6,7 +6,10 @@ package_name = "mavinsight"
 runtime_resource_folder = f"share/{package_name}/package_resources"
 vehicle_configs = [f for f in glob(os.path.join("vehicles", "**/*"), recursive=True) if os.path.isfile(f)]
 sensor_configs = [f for f in glob(os.path.join("sensors", "**/*"), recursive=True) if os.path.isfile(f)]
-resource_configs = [f for f in glob(os.path.join("resource", "**/*"), recursive=True) if os.path.isfile(f)]
+resource_configs = [
+    f for f in glob(os.path.join("resource", "**/*"), recursive=True)
+    if os.path.isfile(f) and f != f"resource/{package_name}"
+]
 site_configs = [f for f in glob(os.path.join("sites", "**/**"), recursive=True) if os.path.isfile(f)]
 
 setup(
@@ -40,7 +43,12 @@ setup(
             "gimbal = models.sensor:Gimbal.main",
             "rangefinder = models.sensor:Rangefinder.main",
             "site = models.site:Site.main",
-            "tba_viz = models.tba_viz:TBA_Viz.main"
+            "tba_viz = models.tba_viz:TBA_Viz.main",
+            "footprint_viz = models.footprint_viz:FootprintViz.main",
+            "scoring_viz = models.scoring_viz:ScoringViz.main",
+            "buildings_viz = models.buildings_viz:BuildingsViz.main",
+            "terrain_viz = models.terrain_viz:TerrainViz.main",
+            "location_viz = models.location_viz:LocationViz.main"
         ],
     },
 )

@@ -1,0 +1,16 @@
+# The camera ds_node reads: rgb${N} on a v3 airframe, pilot${N} on a v2.
+#
+# The node publishes the body frame d${N}_rgb_offset, which is what tf_loc
+# projects through, and a d${N}_rgb_optical leaf for a consumer that uses
+# standard optical math. The two must agree, or a camera footprint will not
+# contain the detections that fall inside it.
+
+display_name: Gimbal RGB Camera (D${N})
+executable: camera
+sensor_type: camera
+
+frame_name: d${N}_rgb
+parent_frame: d${N}_gimbal_frame
+offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+cam_info_topic: /uas${N}/camera/camera_info

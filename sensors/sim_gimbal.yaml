@@ -1,0 +1,28 @@
+# The simulated gimbal. Same component as sensors/gimbal.yaml -- a 3 axis mount
+# on the front of the frame -- but not the same dimensions.
+#
+# The simulator's airframe is a digital clone of the Chimera in COMPONENT
+# MAKEUP, not in size: its mount is the PX4 CGO3 assembly, whose pivot sits
+# 74 mm further back and 78 mm lower than the real one. Measured from Gazebo
+# with the gimbal level, cgo3_mount_link stands at (0.131, 0, -0.159) from
+# base_link against the aircraft's (0.205, 0, -0.081).
+#
+# The real aircraft's numbers stay in sensors/gimbal.yaml and are not touched
+# by this file. Nothing here reaches a vehicle that is not simulated.
+
+display_name: Gimbal (D${N}, simulated)
+executable: gimbal
+sensor_type: gimbal
+msg_schema: mavros
+
+frame_name: d${N}_gimbal_frame
+parent_frame: d${N}_base_link
+# x y z roll pitch yaw. The rotation goes through euler_2_quat, which reads
+# DEGREES. It builds the static frame d${N}_gimbal_frame_offset.
+offset: [0.131, 0.0, -0.159, 0.0, 0.0, 0.0]
+
+orientation_topic: /uas${N}/gimbal_control/device/attitude_status
+
+sensors:
+  - sim_gimbal_rangefinder.yaml
+  - sim_gimbal_rgb_camera.yaml

@@ -1,0 +1,58 @@
+# The Chimera airframe as the SIMULATOR builds it.
+#
+# Everything about the identity is the same as vehicles/chimera.yaml -- the
+# frames, the topics and the ${N} substitution -- because a simulated vehicle is
+# its real counterpart plus ten and answers on the same names. Only the SENSOR
+# GEOMETRY differs, and it differs because the simulated airframe is a clone in
+# component makeup rather than in size: a quad with a 3 axis gimbal on the front
+# of the frame, but a PX4 CGO3 mount whose pivot and camera sit elsewhere. The
+# sim_* sensor files carry those dimensions, measured from Gazebo.
+#
+# Kept apart from chimera.yaml on purpose. The aircraft's own numbers are the
+# ones that fly, and no edit here can reach them.
+
+display_name: Chimera D${N} (simulated)
+executable: vehicle
+platform: quad
+
+# Path de-duplication radius. A pose sample within this distance of the last
+# point kept on the flightPath is dropped, so a vehicle holding station does not
+# grow the Path message while standing still.
+position_tolerance: 0.0762 # (3 inches)
+
+frame_name: d${N}_base_link
+parent_frame: uas${N}_ekf_origin
+pose_frame: enu_flu
+ekf_origin_frame: uas${N}_ekf_origin
+home_frame_name: uas${N}_home_position
+
+# The fiducial correction is the ROOT of the tree and its edge points down:
+# fiducial -> home_position. tf_loc looks up an ordinary detection through this
+# frame and a fiducial detection through home_position.
+fiducial_frame: d${N}_fiducial_offset
+
+# The gimbal publishes its attitude against a reference frame, but the VEHICLE
+# publishes that reference frame, because the body pose updates far more often
+# than the gimbal pose does. The code derives both names from the gimbal's own
+# frame_name, and nothing checks that these two agree with it.
+gimbal_offset_frame: d${N}_gimbal_frame_offset
+gimbal_ref_frame: d${N}_gimbal_frame_ref
+
+namespace: /uas${N}/
+altitude_topic: /uas${N}/altitude
+ekf_origin_fix_topic: /uas${N}/ekf_origin/fix
+fiducial_update_topic: /uas${N}/fiducial_update
+gimbal_flags_topic: /uas${N}/gimbal_control/device/attitude_status
+home_fix_topic: /uas${N}/home_position/fix
+home_position_topic: /uas${N}/home_position/home
+location_topic: /uas${N}/local_position/pose
+velocity_topic: /uas${N}/local_position/velocity_local
+
+# The sensor set, by model. Contract sections 3 and 5. The launch turns the
+# chosen list into this node's `sensors` parameter.
+models:
+  v2:
+    - sim_gimbal.yaml
+  v3:
+    - sim_gimbal.yaml
+    - sim_down_camera.yaml

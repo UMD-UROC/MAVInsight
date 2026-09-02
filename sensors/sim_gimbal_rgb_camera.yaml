@@ -1,0 +1,20 @@
+# The simulated gimbal RGB camera.
+#
+# NOT at the pivot. On the aircraft the camera sits within tens of millimetres
+# of the gimbal's centre of rotation, which is far below the error of the
+# vehicle's own GPS and EKF solution, so sensors/gimbal_rgb_camera.yaml calls
+# that zero and is right to. The simulator's CGO3 mount hangs its camera on an
+# arm instead: 178 mm from the pivot, measured from Gazebo with the gimbal
+# level. That is above the noise it would be hiding in, and it ROTATES with the
+# gimbal, so a zero here would put the camera in a place that is wrong by a
+# different amount at every pitch angle.
+
+display_name: Gimbal RGB Camera (D${N}, simulated)
+executable: camera
+sensor_type: camera
+
+frame_name: d${N}_rgb
+parent_frame: d${N}_gimbal_frame
+offset: [0.074, 0.0, -0.162, 0.0, 0.0, 0.0]
+
+cam_info_topic: /uas${N}/camera/camera_info

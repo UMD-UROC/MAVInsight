@@ -7,6 +7,29 @@
   <maintainer email="cdenihan@proton.me">cdenihan</maintainer>
   <license>Apache-2.0</license>
 
+  <!-- Message interfaces the nodes publish and subscribe -->
+  <depend>cdcl_umd_msgs</depend>
+  <depend>foxglove_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>px4_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>vision_msgs</depend>
+  <depend>visualization_msgs</depend>
+
+  <!-- ROS client/runtime libraries the nodes import -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+
+  <!-- Third-party Python -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-pymap3d</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

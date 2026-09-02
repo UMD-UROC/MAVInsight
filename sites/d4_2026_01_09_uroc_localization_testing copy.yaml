@@ -1,0 +1,14 @@
+/**/*:
+  uroc_elevation_crescent:
+    ros__parameters:
+      name: uroc_elevation_crescent
+      display_name: UROC | Altimeter Plane Localization Crescent Test
+      executable: site
+      geofence_topic: /geofence
+      ground_truth_topic: /ground_truths
+      map_ref_topic: /map_ref
+      map_ref: [38.3132969, -76.5522141, 7.2902162866529565]
+      geofence: []
+      ground_truths: [
+        38.3132969, -76.5522141
+      ]
