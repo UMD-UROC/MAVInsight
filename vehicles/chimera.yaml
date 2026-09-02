@@ -12,6 +12,11 @@ display_name: Chimera D${N}
 executable: vehicle
 platform: quad
 
+# Path de-duplication radius. A pose sample within this distance of the last
+# point kept on the flightPath is dropped, so a vehicle holding station does not
+# grow the Path message while standing still.
+position_tolerance: 0.0762 # (3 inches)
+
 frame_name: d${N}_base_link
 parent_frame: uas${N}_ekf_origin
 pose_frame: enu_flu

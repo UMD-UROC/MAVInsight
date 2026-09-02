@@ -1,13 +1,16 @@
 # python imports
 from __future__ import annotations
 
+from math import isclose
+from typing import Optional, Tuple
+
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
 from mavros_msgs.msg import Altitude, HomePosition, GimbalDeviceAttitudeStatus
-# from nav_msgs.msg import Path
+from nav_msgs.msg import Path
 from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
@@ -137,6 +140,16 @@ class Vehicle(FrameMember):
         else:
             self.SENSORS = []
 
+        # Position tolerance for path de-duplication. A vehicle sitting still still
+        # streams pose at the full rate, and every one of those samples used to become
+        # a Path point, so an idle aircraft grew the message without moving. A sample
+        # within this radius of the last one that was kept is dropped.
+        if self.has_parameter("position_tolerance"):
+            self.POSITION_TOLERANCE = float(self.get_parameter("position_tolerance").value)
+        else:
+            self.default_parameter_warning("position_tolerance")
+            self.POSITION_TOLERANCE = 0.0254  # 1 inch in meters
+
         # Message Schema
         if self.has_parameter("message_schema"):
             msg_schema_str = self.get_parameter("message_schema").get_parameter_value().string_value
@@ -158,19 +171,20 @@ class Vehicle(FrameMember):
         self.VELOCITY = None
 
         # Initialize publishers
-        #self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
+        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, reliable_qos)
         self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
         self.velocity_vector_pub = self.create_publisher(Marker, f"{namespace}velocityVector", reliable_qos)
 
         # Internal storage for path visualizer
-        #self.path = Path()
-        #self.path.header.frame_id = self.PARENT_FRAME
+        self.path = Path()
+        self.path.header.frame_id = self.PARENT_FRAME
         self.latest_pose = None
 
         # Initialize state variables for velocity and position tracking
         self.drone_velocity = [0.0, 0.0, 0.0]  # Current velocity (m/s)
         self.drone_pos = [0.0, 0.0, 0.0]  # Current position (m)
+        self.last_drone_pos: Optional[Tuple[float, float, float]] = None  # Last position kept on the path
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
 
@@ -212,7 +226,7 @@ class Vehicle(FrameMember):
         self.yaw_lock_commanded = False
 
         # Publisher timers
-        #self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
+        self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
         self.create_timer(10.0, self.publish_static_tfs)
 
@@ -310,7 +324,7 @@ class Vehicle(FrameMember):
         # TODO: double check time sync between message schemas
         head_out = Header(frame_id=self.PARENT_FRAME)
 
-        #path_update = PoseStamped()
+        path_update = PoseStamped()
 
         # transform
         if self.LOCATION_MSG_TYPE == VehicleOdometry:
@@ -331,17 +345,18 @@ class Vehicle(FrameMember):
             q_out_flu = frd_ned_2_flu_enu(q_out_frd)
             tf_out = Transform(translation=pos_out, rotation=q_out_flu)
 
-            # path_update.pose.position.x = pos_out.x
-            # path_update.pose.position.y = pos_out.y
-            # path_update.pose.position.z = pos_out.z
-            # path_update.pose.orientation = q_out_flu
+            path_update.pose.position.x = pos_out.x
+            path_update.pose.position.y = pos_out.y
+            path_update.pose.position.z = pos_out.z
+            path_update.pose.orientation = q_out_flu
 
             # TODO: Migrate to new function
             vel_in = msg.velocity
             vel_out = self.position_conversion(x_in=float(vel_in[0]), y_in=float(vel_in[1]), z_in=float(vel_in[2]))
             self.drone_velocity = [vel_out.x, vel_out.y, vel_out.z]
 
-            self.drone_pos = [pos_out.x, pos_out.y, pos_out.z]
+            new_pos = (float(pos_out.x), float(pos_out.y), float(pos_out.z))
+            self.drone_pos = list(new_pos)
 
         else:
             assert isinstance(msg, PoseStamped)
@@ -350,19 +365,21 @@ class Vehicle(FrameMember):
             pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
             tf_out = Transform(translation=pos_out, rotation=msg.pose.orientation)
 
-            # path_update.pose.position.x = float(pos_in.x)
-            # path_update.pose.position.y = float(pos_in.y)
-            # path_update.pose.position.z = float(pos_in.z)
-            # path_update.pose.orientation = msg.pose.orientation
+            path_update.pose.position.x = float(pos_in.x)
+            path_update.pose.position.y = float(pos_in.y)
+            path_update.pose.position.z = float(pos_in.z)
+            path_update.pose.orientation = msg.pose.orientation
 
             # Extract velocity from Odometry message
             if self.VELOCITY:
                 vel_in = self.VELOCITY.twist.linear
                 self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
-            self.drone_pos = [float(pos_in.x), float(pos_in.y), float(pos_in.z)]
+            new_pos = (float(pos_in.x), float(pos_in.y), float(pos_in.z))
+            self.drone_pos = list(new_pos)
 
-        # path_update.header = head_out
+        path_update.header = head_out
+        self.path.header.stamp = path_update.header.stamp
 
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
@@ -382,8 +399,11 @@ class Vehicle(FrameMember):
 
         # build PoseStamped for path
         # Path update
-        # self.path.poses.append(path_update) # type: ignore
-        # self.path.header.stamp = path_update.header.stamp
+        if self.last_drone_pos is None or not self._positions_equal(
+            self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
+        ):
+            self.path.poses.append(path_update)  # type: ignore
+            self.last_drone_pos = new_pos
 
         # publish the reference frame for a gimbal
         # construct the gimbal reference frame based on the active flags
@@ -482,9 +502,9 @@ class Vehicle(FrameMember):
             altitude=alt_e
         ))
 
-    # def publish_path(self):
-    #     if self.path.poses:
-    #         self.path_pub.publish(self.path)
+    def publish_path(self):
+        if self.path.poses:
+            self.path_pub.publish(self.path)
 
     def publish_velocity_vector(self):
         # Don't publish until we've received at least one position update
@@ -530,6 +550,10 @@ class Vehicle(FrameMember):
             return Vector3(x=x_in, y=y_in, z=z_in)
         else:
             raise ValueError(f"Unable to determine the coordinate frame for message type: {self.POSE_FRAME}")
+
+    @staticmethod
+    def _positions_equal(a: Tuple[float, float, float], b: Tuple[float, float, float], tol: float = 1e-6) -> bool:
+        return all(isclose(x, y, rel_tol=0.0, abs_tol=tol) for x, y in zip(a, b))
 
     def heading_only_frame(self, o:Quaternion) -> R:
         R_world_body = R.from_quat([o.x, o.y, o.z, o.w])
