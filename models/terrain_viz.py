@@ -48,6 +48,12 @@ mapping to under a twentieth of a texture pixel over both built scenes, so the
 mosaic's own lat/lon box lands on the image where the imagery already puts that
 ground.
 
+A site with no built scene has no mesh to draw the map into, and the map is
+then the only picture of the ground the operator gets. It goes out on its own
+there, as a flat quad on the plane both sides cast at, placed by its own
+lat/lon box. Nothing else on the ground reads this topic, so a scene decides
+what the map is drawn on and never whether it is drawn.
+
 Subscribes
     <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
                             <reference_frame>
@@ -232,15 +238,14 @@ class TerrainViz(GraphMember):
                 f"terrain from {mosaic_topic}")
 
         if self.mesh_path is None or self.surface_path is None:
-            self.ground = None
             self.get_logger().warn(
-                "no terrain mesh, so the 3D panel shows no ground. A scene "
-                "names one; an aircraft outside a built scene does not.")
+                "no terrain mesh, so the 3D panel shows no ground under the "
+                "vehicle's map. A scene names one; an aircraft outside a "
+                "built scene does not.")
             self.scene_pub.publish(SceneUpdate(deletions=[], entities=[]))
-        else:
-            self.ground = SceneGround(self, self.REFERENCE_FRAME, local_fix_topic,
-                                      self.geoid_height)
-            self.create_timer(RELOAD_CHECK_S, self.publish_when_changed)
+        self.ground = SceneGround(self, self.REFERENCE_FRAME, local_fix_topic,
+                                  self.geoid_height)
+        self.create_timer(RELOAD_CHECK_S, self.publish_when_changed)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Terrain visualization initialized!")
 
@@ -255,7 +260,7 @@ class TerrainViz(GraphMember):
         read once for each change and the ground is looked at every tick,
         because the ground moves far more often than the scene is rebuilt."""
         try:
-            stamp = self.mesh_path.stat().st_mtime_ns
+            stamp = None if self.mesh_path is None else self.mesh_path.stat().st_mtime_ns
         except OSError:
             stamp = None
         mosaic_stamp = None if self.mosaic is None else (
@@ -264,7 +269,7 @@ class TerrainViz(GraphMember):
             self.model_stamp = stamp
             self.mosaic_drawn = mosaic_stamp
             self.ground.drawn_at = None
-            if stamp is None:
+            if stamp is None and self.mesh_path is not None:
                 self.get_logger().info(
                     f"no terrain mesh at {self.mesh_path}. The 3D panel shows "
                     f"no ground until scenegen build writes it.")
@@ -402,6 +407,8 @@ class TerrainViz(GraphMember):
         under the scene needs no new model.
         """
         self.model_bytes = None
+        if self.mesh_path is None or self.surface_path is None:
+            return self.build_mosaic_model()
         self.scene_origin_lla = self.scene_origin()
         if self.scene_origin_lla is None or not self.mesh_path.is_file():
             return False
@@ -430,6 +437,68 @@ class TerrainViz(GraphMember):
                            f"{self.mesh_path.name}{mosaic_note}, "
                            f"{len(self.model_bytes) // 1024} kB")
         return True
+
+    def build_mosaic_model(self) -> bool:
+        """Hold the vehicle's map alone, as a flat quad in map centre
+        coordinates. False while there is no map yet, or no fix to place one.
+
+        A site with no built scene has no mesh to draw the map into, and the
+        map is then the only picture of the ground there is. Both sides meet
+        the flat plane there, which is z = 0 of the reference frame, so the
+        quad lies on it and the map's own bounds georeference it.
+        """
+        self.scene_origin_lla = None
+        if self.mosaic is None or self.ground.local_fix is None:
+            return False
+        # The plane sits at the height the fix reports, and `anchor` puts the
+        # scene centre back in that datum by adding the geoid height on.
+        self.scene_origin_lla = [
+            (self.mosaic.sw_lat + self.mosaic.ne_lat) / 2.0,
+            (self.mosaic.sw_lon + self.mosaic.ne_lon) / 2.0,
+            self.ground.local_fix.altitude - self.geoid_height]
+        box = self.mosaic_box()
+        if box is None:
+            return False
+        try:
+            image, size = self.mosaic_image()
+        except (OSError, ValueError) as error:
+            self.get_logger().warn(f"cannot read the mosaic overlay: {error}",
+                                   throttle_duration_sec=30.0)
+            return False
+        west, south, east, north = box
+        positions = np.array([[west, south, 0.0], [east, south, 0.0],
+                              [east, north, 0.0], [west, north, 0.0]])
+        # v is measured up from the bottom of the image, and the map is north
+        # up, so the northern corners carry v = 1.
+        uvs = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+        indices = np.array([0, 1, 2, 0, 2, 3])
+        self.model_bytes = gltf.textured_mesh(positions, uvs, indices, image,
+                                              "image/jpeg")
+        self.model_note = (f"the vehicle's map on the flat plane, a "
+                           f"{size[0]}x{size[1]} image over "
+                           f"{east - west:.0f}x{north - south:.0f} m, "
+                           f"{len(self.model_bytes) // 1024} kB")
+        return True
+
+    def mosaic_image(self):
+        """The map as an opaque picture, and its size.
+
+        A model's texture is drawn opaque, so the map's coverage alpha goes
+        onto black here rather than out as transparency. `terrain_texture_px`
+        caps the width the same way it caps a scene's.
+        """
+        overlay = Image.open(io.BytesIO(bytes(self.mosaic.overlay_png.data)))
+        overlay = overlay.convert("RGBA")
+        if max(overlay.size) > self.texture_px:
+            scale = self.texture_px / max(overlay.size)
+            overlay = overlay.resize((max(1, round(overlay.width * scale)),
+                                      max(1, round(overlay.height * scale))),
+                                     Image.BICUBIC)
+        picture = Image.new("RGB", overlay.size)
+        picture.paste(overlay, (0, 0), overlay)
+        packed = io.BytesIO()
+        picture.save(packed, "JPEG", quality=88)
+        return packed.getvalue(), picture.size
 
     def scene_origin(self):
         """Where the scene centre sits on the Earth, as its surface file holds
