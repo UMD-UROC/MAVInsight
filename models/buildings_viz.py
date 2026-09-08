@@ -399,7 +399,7 @@ class BuildingsViz(GraphMember):
             self.scene_pub.publish(self.empty())
         else:
             self.ground = SceneGround(self, self.REFERENCE_FRAME, local_fix_topic,
-                                      self.geoid_height)
+                                      self.geoid_height, surface)
             self.create_timer(RELOAD_CHECK_S, self.publish_when_changed)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Buildings visualization initialized!")
