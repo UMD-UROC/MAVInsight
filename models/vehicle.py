@@ -17,16 +17,14 @@ from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
 # MAVInsight imports
-from models.frame_utils import R_enu_nwu, enu_2_lla, frd_ned_2_flu_enu
+from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
 from models.frame_member import FrameMember
+from models.gimbal_frame import (FLAGS_NEUTRAL, FLAGS_PITCH_LOCK,
+                                 FLAGS_RETRACT, FLAGS_ROLL_LOCK,
+                                 FLAGS_YAW_LOCK, gimbal_reference_from_body,
+                                 yaw_is_earth_referenced)
 from models.platforms import Platforms
 from models.qos_profiles import reliable_qos, viz_qos
-
-FLAGS_RETRACT = 1
-FLAGS_NEUTRAL = 2
-FLAGS_ROLL_LOCK = 4
-FLAGS_PITCH_LOCK = 8
-FLAGS_YAW_LOCK = 16
 
 class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -224,6 +222,7 @@ class Vehicle(FrameMember):
         self.roll_lock_commanded = False
         self.pitch_lock_commanded = False
         self.yaw_lock_commanded = False
+        self.gimbal_flags = 0
 
         # Publisher timers
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
@@ -253,6 +252,8 @@ class Vehicle(FrameMember):
     def update_gimbal_flags(self, msg: GimbalDeviceAttitudeStatus):
         flags = int(msg.flags)
         new_flag = False
+        new_flag |= (yaw_is_earth_referenced(self.gimbal_flags)
+                     != yaw_is_earth_referenced(flags))
         new_flag |= (self.retract_commanded ^ bool(flags & FLAGS_RETRACT))
         new_flag |= (self.neutral_position_commanded ^ bool(flags & FLAGS_NEUTRAL))
         new_flag |= (self.roll_lock_commanded ^ bool(flags & FLAGS_ROLL_LOCK))
@@ -263,8 +264,17 @@ class Vehicle(FrameMember):
         self.roll_lock_commanded = bool(flags & FLAGS_ROLL_LOCK)
         self.pitch_lock_commanded = bool(flags & FLAGS_PITCH_LOCK)
         self.yaw_lock_commanded = bool(flags & FLAGS_YAW_LOCK)
+        self.gimbal_flags = flags
         if new_flag:
-            self.get_logger().info(f"~~~~~~~NEW Gimbal Flags~~~~~~~~\nRetract: {self.retract_commanded}\nNeutral: {self.neutral_position_commanded}\nRoll Lock: {self.roll_lock_commanded}\nPitch Lock: {self.pitch_lock_commanded}\nYaw Lock: {self.yaw_lock_commanded}")
+            yaw_frame = "earth" if yaw_is_earth_referenced(flags) else "vehicle"
+            self.get_logger().info(
+                f"~~~~~~~NEW Gimbal Flags~~~~~~~~\n"
+                f"Retract: {self.retract_commanded}\n"
+                f"Neutral: {self.neutral_position_commanded}\n"
+                f"Roll Lock: {self.roll_lock_commanded}\n"
+                f"Pitch Lock: {self.pitch_lock_commanded}\n"
+                f"Yaw Lock: {self.yaw_lock_commanded}\n"
+                f"Yaw Frame: {yaw_frame}")
 
     def publish_static_tfs(self):
         # timer cb to occasionaly publish static tfs for late joiners
@@ -407,22 +417,9 @@ class Vehicle(FrameMember):
 
         # publish the reference frame for a gimbal
         # construct the gimbal reference frame based on the active flags
-        R_body_ref = R.identity()
-        if self.roll_lock_commanded or self.pitch_lock_commanded or self.yaw_lock_commanded:
-            q = tf_out.rotation
-            R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
-            R_body_ref *= R_world_body.inv()
-            # A locked axis is measured against a level frame. The yaw lock picks
-            # which level frame: the earth frame, whose x axis points North, or the
-            # vehicle frame, whose x axis follows the airframe heading. MAVLink
-            # gives both in NED, so the x axis of the earth frame is North, which
-            # is 90 degrees from the x axis of this ENU tree. Drop that turn and a
-            # yaw-locked gimbal builds a camera frame 90 degrees off, on real
-            # hardware as much as in simulation.
-            if self.yaw_lock_commanded:
-                R_body_ref *= R_enu_nwu
-            else:
-                R_body_ref *= self.heading_only_frame(tf_out.rotation)
+        q = tf_out.rotation
+        R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
+        R_body_ref = gimbal_reference_from_body(R_world_body, self.gimbal_flags)
         (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
         q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)
         # make and publish the transform
@@ -554,20 +551,6 @@ class Vehicle(FrameMember):
     @staticmethod
     def _positions_equal(a: Tuple[float, float, float], b: Tuple[float, float, float], tol: float = 1e-6) -> bool:
         return all(isclose(x, y, rel_tol=0.0, abs_tol=tol) for x, y in zip(a, b))
-
-    def heading_only_frame(self, o:Quaternion) -> R:
-        R_world_body = R.from_quat([o.x, o.y, o.z, o.w])
-        # find the +x axis of the body (apply the +x vector to the R_world_body frame)
-        heading_vector_enu = R_world_body.apply([1.0, 0.0, 0.0])
-        # get only the component of this vector in the XY world plane (remove the Z-component of a vector in ENU space)
-        heading_vector_enu[2] = 0.0
-        # check if the vehicle is pointing straight up or down (would have no measurable "heading")
-        norm = np.linalg.norm(heading_vector_enu)
-        if norm < 1e-9:
-            return R.identity()
-        heading_vector_enu = heading_vector_enu / norm
-        heading = np.arctan2(heading_vector_enu[1], heading_vector_enu[0])
-        return R.from_euler('Z', heading)
 
     def _format(self, tab_depth: int = 0) -> str:
         t1 = self._tab_char * tab_depth
