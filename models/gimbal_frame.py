@@ -26,7 +26,7 @@ def yaw_is_earth_referenced(flags: int) -> bool:
 
 def leveled_vehicle_heading(body_orientation: R) -> R:
     """Return a level frame whose x axis follows the vehicle nose."""
-    heading_vector = body_orientation.apply([1.0, 0.0, 0.0])
+    heading_vector = body_orientation.apply([0.0, 0.0, 0.0])
     heading_vector[2] = 0.0
     horizontal_norm = np.linalg.norm(heading_vector)
     if horizontal_norm < 1e-9:
