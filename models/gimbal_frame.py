@@ -30,9 +30,10 @@ def leveled_vehicle_heading(body_orientation: R) -> R:
     heading_vector[2] = 0.0
     horizontal_norm = np.linalg.norm(heading_vector)
     if horizontal_norm < 1e-9:
-        return R.identity()
+        return R.from_euler("Z", 90, degrees=True)
     heading_vector /= horizontal_norm
-    return R.from_euler("Z", np.arctan2(heading_vector[1], heading_vector[0]))
+    heading = np.arctan2(heading_vector[1], heading_vector[0]) + np.pi/2
+    return R.from_euler("Z", heading)
 
 
 def gimbal_reference_from_body(body_orientation: R, flags: int) -> R:
