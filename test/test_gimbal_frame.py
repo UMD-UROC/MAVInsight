@@ -2,6 +2,7 @@
 
 import unittest
 
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from models.gimbal_frame import (FLAGS_PITCH_LOCK, FLAGS_ROLL_LOCK,
@@ -46,6 +47,17 @@ class TestGimbalFrame(unittest.TestCase):
         self.assertAlmostEqual(world_attitude[0], 0.0)
         self.assertAlmostEqual(world_attitude[1], 0.0)
         self.assertAlmostEqual(world_attitude[2], 31.0)
+
+    def test_airframe_can_bypass_body_correction_and_rotate_reference(self):
+        """V3's reference is fixed +90 degrees about its local Z axis."""
+        body = R.from_euler("xyz", [4.0, -7.0, 31.0], degrees=True)
+        reference = gimbal_reference_from_body(
+            body,
+            LEVEL_LOCKS | FLAGS_YAW_IN_EARTH_FRAME,
+            apply_stabilization_correction=False,
+            reference_rotation=R.from_euler("z", 90.0, degrees=True))
+        self.assertTrue(np.allclose(
+            reference.as_matrix(), R.from_euler("z", 90.0, degrees=True).as_matrix()))
 
 
 if __name__ == "__main__":

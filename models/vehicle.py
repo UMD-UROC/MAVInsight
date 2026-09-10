@@ -215,6 +215,26 @@ class Vehicle(FrameMember):
             self.default_parameter_warning("gimbal_ref_frame")
             self.gimbal_ref_frame = "gimbal_frame_ref"
 
+        if self.has_parameter("gimbal_reference_apply_stabilization_correction"):
+            self.gimbal_reference_apply_stabilization_correction = (
+                self.get_parameter("gimbal_reference_apply_stabilization_correction")
+                .get_parameter_value().bool_value)
+        else:
+            self.default_parameter_warning("gimbal_reference_apply_stabilization_correction")
+            self.gimbal_reference_apply_stabilization_correction = True
+
+        if self.has_parameter("gimbal_reference_rotation_deg"):
+            rotation_deg = list(
+                self.get_parameter("gimbal_reference_rotation_deg")
+                .get_parameter_value().double_array_value)
+            if len(rotation_deg) != 3:
+                raise ValueError(
+                    "gimbal_reference_rotation_deg must contain roll, pitch, and yaw in degrees")
+        else:
+            self.default_parameter_warning("gimbal_reference_rotation_deg")
+            rotation_deg = [0.0, 0.0, 0.0]
+        self.gimbal_reference_rotation = R.from_euler("xyz", rotation_deg, degrees=True)
+
         self.create_subscription(GimbalDeviceAttitudeStatus, gimbal_flags_topic, self.update_gimbal_flags, viz_qos)
         # initialize gimbal state variables
         self.retract_commanded = False
@@ -419,7 +439,11 @@ class Vehicle(FrameMember):
         # construct the gimbal reference frame based on the active flags
         q = tf_out.rotation
         R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
-        R_body_ref = gimbal_reference_from_body(R_world_body, self.gimbal_flags)
+        R_body_ref = gimbal_reference_from_body(
+            R_world_body,
+            self.gimbal_flags,
+            self.gimbal_reference_apply_stabilization_correction,
+            self.gimbal_reference_rotation)
         (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
         q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)
         # make and publish the transform

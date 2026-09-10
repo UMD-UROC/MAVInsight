@@ -38,6 +38,15 @@ fiducial_frame: d${N}_fiducial_offset
 gimbal_offset_frame: d${N}_gimbal_frame_offset
 gimbal_ref_frame: d${N}_gimbal_frame_ref
 
+# Preserve the aircraft's gimbal-attitude convention in simulation as well.
+gimbal_reference_by_model:
+  v2:
+    gimbal_reference_apply_stabilization_correction: true
+    gimbal_reference_rotation_deg: [0.0, 0.0, 0.0]
+  v3:
+    gimbal_reference_apply_stabilization_correction: false
+    gimbal_reference_rotation_deg: [0.0, 0.0, 90.0]
+
 namespace: /uas${N}/
 altitude_topic: /uas${N}/altitude
 ekf_origin_fix_topic: /uas${N}/ekf_origin/fix

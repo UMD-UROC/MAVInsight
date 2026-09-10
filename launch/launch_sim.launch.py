@@ -66,6 +66,8 @@ def frame_tree(context, *args, **kwargs):
         config = load(resources / file_name, number)
         if 'models' in config:
             config['sensors'] = config.pop('models')[model]
+        if 'gimbal_reference_by_model' in config:
+            config.update(config.pop('gimbal_reference_by_model')[model])
 
         nodes.append(Node(
             package=PACKAGE,
