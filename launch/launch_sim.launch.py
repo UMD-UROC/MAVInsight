@@ -73,7 +73,7 @@ def frame_tree(context, *args, **kwargs):
         if 'gimbal_reference_by_model' in config:
             config.update(config.pop('gimbal_reference_by_model')[model])
         if bench and file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
-            config['bench_altitude_offset'] = 20.0
+            config['bench_base_altitude'] = 20.0
 
         nodes.append(Node(
             package=PACKAGE,

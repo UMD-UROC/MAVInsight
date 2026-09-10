@@ -147,6 +147,9 @@ class Vehicle(FrameMember):
         else:
             self.default_parameter_warning("position_tolerance")
             self.POSITION_TOLERANCE = 0.0254  # 1 inch in meters
+        self.BENCH_BASE_ALTITUDE = float(
+            self.get_parameter("bench_base_altitude").value
+            if self.has_parameter("bench_base_altitude") else float("nan"))
 
         # Message Schema
         if self.has_parameter("message_schema"):
@@ -415,6 +418,12 @@ class Vehicle(FrameMember):
                 self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
             new_pos = (float(pos_in.x), float(pos_in.y), float(pos_in.z))
+            self.drone_pos = list(new_pos)
+
+        if np.isfinite(self.BENCH_BASE_ALTITUDE):
+            tf_out.translation.z = self.BENCH_BASE_ALTITUDE
+            path_update.pose.position.z = self.BENCH_BASE_ALTITUDE
+            new_pos = (new_pos[0], new_pos[1], self.BENCH_BASE_ALTITUDE)
             self.drone_pos = list(new_pos)
 
         path_update.header = head_out
