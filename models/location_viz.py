@@ -113,9 +113,10 @@ class LocationViz(GraphMember):
                     if math.isfinite(self.relative_altitude)
                     else self.fix.altitude + self.pose.pose.position.z)
         q = self.pose.pose.orientation
-        self.heading_rad = math.atan2(
+        yaw_enu = math.atan2(
             2.0 * (q.w * q.z + q.x * q.y),
             1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self.heading_rad = (math.pi / 2.0 - yaw_enu) % (2.0 * math.pi)
         return latitude, longitude, altitude, self.pose.header
 
     def publish_location(self) -> None:
