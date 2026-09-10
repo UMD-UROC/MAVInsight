@@ -26,6 +26,8 @@ and a caller holds the bytes it built.
 """
 
 # python imports
+import json
+from pathlib import Path
 from typing import Optional, Sequence
 
 # ROS2 imports
@@ -66,6 +68,58 @@ def as_fix(lla: Sequence[float]) -> NavSatFix:
     fix = NavSatFix()
     fix.latitude, fix.longitude, fix.altitude = (float(v) for v in lla[:3])
     return fix
+
+
+class TerrainSurface:
+    """The scene height grid used to put frame zero on the launch ground."""
+
+    def __init__(self, side_m: float, grid_n: int,
+                 terrain_z: Sequence[Sequence[float]]) -> None:
+        self.side = float(side_m)
+        self.n = int(grid_n)
+        self.terrain = np.asarray(terrain_z, dtype=float)
+        expected = (self.n + 1, self.n + 1)
+        if self.terrain.shape != expected:
+            raise ValueError(f"terrain_z is {self.terrain.shape}, expected {expected}")
+
+    @classmethod
+    def load(cls, path: str) -> Optional["TerrainSurface"]:
+        if not path:
+            return None
+        data = json.loads(Path(path).read_text())
+        return cls(data["side_m"], data["grid_n"], data["terrain_z"])
+
+    def height(self, east: float, north: float) -> float:
+        """Bilinear terrain height in scene-centre coordinates."""
+        n = self.n
+        fi = float(np.clip((east + self.side / 2.0) / self.side * n,
+                           0.0, n - 1e-9))
+        fj = float(np.clip((north + self.side / 2.0) / self.side * n,
+                           0.0, n - 1e-9))
+        i, j = int(fi), int(fj)
+        di, dj = fi - i, fj - j
+        grid = self.terrain
+        return float(
+            grid[j, i] * (1.0 - di) * (1.0 - dj)
+            + grid[j, i + 1] * di * (1.0 - dj)
+            + grid[j + 1, i] * (1.0 - di) * dj
+            + grid[j + 1, i + 1] * di * dj)
+
+
+def grounded_scene_offset(local_fix: NavSatFix, scene_anchor: NavSatFix,
+                          correction, surface: Optional[TerrainSurface]):
+    """Put the terrain below corrected home at zero, then apply survey z."""
+    correction = np.asarray(correction, dtype=float)
+    east, north, _ = lla_2_enu(local_fix, scene_anchor, ignore_alt=True)
+    placed_east = float(east - correction[0])
+    placed_north = float(north - correction[1])
+    home_ground = 0.0 if surface is None else surface.height(
+        -placed_east, -placed_north)
+    return np.array([
+        placed_east,
+        placed_north,
+        -home_ground - GROUND_CLEARANCE_M - float(correction[2]),
+    ])
 
 
 class FrameSurvey:
@@ -131,11 +185,18 @@ class SceneGround:
     """
 
     def __init__(self, node, reference_frame: str, local_fix_topic: str,
-                 geoid_height_m: float) -> None:
+                 geoid_height_m: float, surface_file: str = "") -> None:
         """Watch the fix and the survey that place `reference_frame`."""
         self.node = node
         self.reference_frame = reference_frame
         self.geoid_height = float(geoid_height_m)
+        try:
+            self.surface = TerrainSurface.load(surface_file)
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            self.surface = None
+            node.get_logger().warn(
+                f"cannot read launch ground from {surface_file!r}: {error}. "
+                f"The scene centre is used as ground zero.")
         self.survey = FrameSurvey(node, reference_frame)
         self.local_fix: Optional[NavSatFix] = None
         # Where the layer stands now. A caller sets it after it publishes.
@@ -169,10 +230,9 @@ class SceneGround:
                 f"Placed against the wrong home it would lie metres off the "
                 f"ground it belongs to.", throttle_duration_sec=10.0)
             return None
-        east, north, up = lla_2_enu(self.local_fix, self.anchor(origin_lla),
-                                    ignore_alt=False)
-        return (np.array([east, north, up - GROUND_CLEARANCE_M])
-                - self.survey.correction())
+        return grounded_scene_offset(
+            self.local_fix, self.anchor(origin_lla), self.survey.correction(),
+            self.surface)
 
     def moved(self, offset: Optional[np.ndarray]) -> bool:
         """Whether the scene has to be drawn again to stand at this offset."""

@@ -15,6 +15,11 @@ display_name: Chimera D${N} (simulated)
 executable: vehicle
 platform: quad
 
+# Path de-duplication radius. A pose sample within this distance of the last
+# point kept on the flightPath is dropped, so a vehicle holding station does not
+# grow the Path message while standing still.
+position_tolerance: 0.0762 # (3 inches)
+
 frame_name: d${N}_base_link
 parent_frame: uas${N}_ekf_origin
 pose_frame: enu_flu
@@ -32,6 +37,17 @@ fiducial_frame: d${N}_fiducial_offset
 # frame_name, and nothing checks that these two agree with it.
 gimbal_offset_frame: d${N}_gimbal_frame_offset
 gimbal_ref_frame: d${N}_gimbal_frame_ref
+
+# Preserve the aircraft's gimbal-attitude convention in simulation as well.
+gimbal_reference_by_model:
+  v2:
+    gimbal_reference_apply_stabilization_correction: true
+    gimbal_reference_yaw_frame: reported
+    gimbal_reference_rotation_deg: [0.0, 0.0, 0.0]
+  v3:
+    gimbal_reference_apply_stabilization_correction: true
+    gimbal_reference_yaw_frame: earth
+    gimbal_reference_rotation_deg: [0.0, 0.0, 0.0]
 
 namespace: /uas${N}/
 altitude_topic: /uas${N}/altitude
