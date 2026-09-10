@@ -223,6 +223,15 @@ class Vehicle(FrameMember):
             self.default_parameter_warning("gimbal_reference_apply_stabilization_correction")
             self.gimbal_reference_apply_stabilization_correction = True
 
+        if self.has_parameter("gimbal_reference_yaw_frame"):
+            yaw_frame = self.get_parameter("gimbal_reference_yaw_frame").get_parameter_value().string_value
+            if yaw_frame not in ("reported", "earth"):
+                raise ValueError("gimbal_reference_yaw_frame must be 'reported' or 'earth'")
+            self.gimbal_reference_yaw_is_earth = (yaw_frame == "earth")
+        else:
+            self.default_parameter_warning("gimbal_reference_yaw_frame")
+            self.gimbal_reference_yaw_is_earth = None
+
         if self.has_parameter("gimbal_reference_rotation_deg"):
             rotation_deg = list(
                 self.get_parameter("gimbal_reference_rotation_deg")
@@ -443,6 +452,7 @@ class Vehicle(FrameMember):
             R_world_body,
             self.gimbal_flags,
             self.gimbal_reference_apply_stabilization_correction,
+            self.gimbal_reference_yaw_is_earth,
             self.gimbal_reference_rotation)
         (q_x_ref, q_y_ref, q_z_ref, q_w_ref) = R_body_ref.as_quat()
         q_body_ref = Quaternion(x=q_x_ref, y=q_y_ref, z=q_z_ref, w=q_w_ref)

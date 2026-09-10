@@ -40,20 +40,24 @@ def gimbal_reference_from_body(
         body_orientation: R,
         flags: int,
         apply_stabilization_correction: bool = True,
+        yaw_is_earth_referenced_override: bool | None = None,
         reference_rotation: R | None = None) -> R:
     """Return the body-to-reference rotation declared by gimbal flags.
 
     ``reference_rotation`` is an airframe-specific rotation from the gimbal
-    offset frame to its attitude reference frame.  Some gimbals already report
-    their attitude in that frame, so they deliberately omit the body-derived
-    stabilization correction.
+    offset frame to its attitude reference frame.  A yaw-frame override is for
+    hardware whose attitude report uses an earth frame despite its MAVLink
+    flags claiming a vehicle frame.
     """
     if reference_rotation is None:
         reference_rotation = R.identity()
 
     if not apply_stabilization_correction or not flags & LOCK_FLAGS:
         return reference_rotation
-    if yaw_is_earth_referenced(flags):
+    earth_referenced = (yaw_is_earth_referenced(flags)
+                        if yaw_is_earth_referenced_override is None
+                        else yaw_is_earth_referenced_override)
+    if earth_referenced:
         leveled_reference = EARTH_NORTH_IN_ENU
     else:
         leveled_reference = leveled_vehicle_heading(body_orientation)
