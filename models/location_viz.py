@@ -24,6 +24,8 @@ import math
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float64
+from rclpy.time import Time
+from tf2_ros import Buffer, TransformException, TransformListener
 
 # MAVInsight imports
 from models.graph_member import GraphMember
@@ -60,13 +62,21 @@ class LocationViz(GraphMember):
         heading_topic = param(self, "heading_topic", "global_position/compass_hdg")
         pose_topic = param(self, "pose_topic", "local_position/pose")
         use_local_pose = bool(param(self, "use_local_pose", False))
+        use_tf_pose = bool(param(self, "use_tf_pose", False))
+        reference_frame = param(self, "reference_frame", "home_position")
+        base_frame = param(self, "base_frame", "base_link")
         relative_altitude = float(param(self, "relative_altitude", float("nan")))
         viz_topic = param(self, "location_viz_topic", "/viz/location")
 
         self.fix = None
         self.pose = None
         self.use_local_pose = use_local_pose
+        self.use_tf_pose = use_tf_pose
+        self.reference_frame = reference_frame
+        self.base_frame = base_frame
         self.relative_altitude = relative_altitude
+        self.tf_buffer = Buffer() if self.use_tf_pose else None
+        self.tf_listener = TransformListener(self.tf_buffer, self) if self.use_tf_pose else None
         self.heading_rad = float("nan")
 
         if not HAVE_LOCATION_FIX:
@@ -80,7 +90,7 @@ class LocationViz(GraphMember):
         # nothing at all.
         self.create_subscription(NavSatFix, fix_topic, self.fix_cb, viz_qos)
         self.create_subscription(Float64, heading_topic, self.heading_cb, viz_qos)
-        if self.use_local_pose:
+        if self.use_local_pose and not self.use_tf_pose:
             self.create_subscription(PoseStamped, pose_topic, self.pose_cb, viz_qos)
         self.location_pub = self.create_publisher(LocationFix, viz_topic, reliable_qos)
         self.create_timer(1.0 / PUBLISH_RATE_HZ, self.publish_location)
@@ -101,6 +111,26 @@ class LocationViz(GraphMember):
         self.pose = msg
 
     def _vehicle_fix(self) -> tuple[float, float, float, object]:
+        if self.use_tf_pose:
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    self.reference_frame, self.base_frame, Time())
+            except TransformException:
+                return None
+            translation = transform.transform.translation
+            east = translation.x
+            north = translation.y
+            altitude = self.fix.altitude + translation.z
+            q = transform.transform.rotation
+            yaw_enu = math.atan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+            self.heading_rad = (math.pi / 2.0 - yaw_enu) % (2.0 * math.pi)
+            radius = 6378137.0
+            latitude = self.fix.latitude + math.degrees(north / radius)
+            longitude = self.fix.longitude + math.degrees(
+                east / (radius * math.cos(math.radians(self.fix.latitude))))
+            return latitude, longitude, altitude, transform.header
         if not self.use_local_pose or self.pose is None:
             return self.fix.latitude, self.fix.longitude, self.fix.altitude, self.fix.header
         east = self.pose.pose.position.x
@@ -123,7 +153,10 @@ class LocationViz(GraphMember):
         if self.fix is None:
             return
         location = LocationFix()
-        latitude, longitude, altitude, header = self._vehicle_fix()
+        vehicle_fix = self._vehicle_fix()
+        if vehicle_fix is None:
+            return
+        latitude, longitude, altitude, header = vehicle_fix
         location.timestamp = header.stamp
         location.frame_id = header.frame_id
         location.latitude = latitude

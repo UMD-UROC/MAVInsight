@@ -41,6 +41,9 @@ def generate_launch_description():
             'sim', default_value='false', choices=['true', 'false'],
             description='Build the tree from the simulated airframe\'s '
                         'dimensions rather than the aircraft\'s.'),
+        DeclareLaunchArgument(
+            'bench', default_value='false', choices=['true', 'false'],
+            description='Place the bench vehicle 20 m above its home frame.'),
         OpaqueFunction(function=frame_tree),
     ])
 
@@ -49,6 +52,7 @@ def frame_tree(context, *args, **kwargs):
     number = int(LaunchConfiguration('uas').perform(context))
     model = LaunchConfiguration('model').perform(context)
     sim = LaunchConfiguration('sim').perform(context) == 'true'
+    bench = LaunchConfiguration('bench').perform(context) == 'true'
 
     resources = Path(get_package_share_directory(PACKAGE)) / 'package_resources'
     global_config = str(resources / 'global_node_config.yaml')
@@ -68,6 +72,8 @@ def frame_tree(context, *args, **kwargs):
             config['sensors'] = config.pop('models')[model]
         if 'gimbal_reference_by_model' in config:
             config.update(config.pop('gimbal_reference_by_model')[model])
+        if bench and file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
+            config['bench_altitude_offset'] = 20.0
 
         nodes.append(Node(
             package=PACKAGE,
