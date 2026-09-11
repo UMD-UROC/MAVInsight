@@ -574,9 +574,13 @@ class ScoringViz(GraphMember):
             if kind not in features:
                 continue
             center = detection.bbox.center.position
+            # Detection coordinates are already expressed in the shared
+            # fiducial frame.  The map fix is that frame's WGS84 origin, so
+            # applying the vehicle survey correction here a second time shifts
+            # the 2-D result away from the fiducial (the 3-D TF has already
+            # applied it).
             latitude, longitude, _ = enu_2_lla(
-                self.local_fix, center.x + correction[0],
-                center.y + correction[1], center.z + correction[2])
+                self.local_fix, center.x, center.y, center.z)
             features[kind].append(map_feature(detection, latitude, longitude))
         for kind, publisher in self.geojson_pub.items():
             drawn = json.dumps({"type": "FeatureCollection",
@@ -642,16 +646,16 @@ class ScoringViz(GraphMember):
                                    + LABEL_HEIGHT_M)
             markers.append(text(msg.header, "target_names", index,
                                 label_position, detection.id))
-            if correction is None:
+            if self.local_fix is None:
                 continue
             ring = []
             for step in range(TARGET_RING_POINTS + 1):
                 angle = 2.0 * math.pi * step / TARGET_RING_POINTS
                 latitude, longitude, _ = enu_2_lla(
                     self.local_fix,
-                    position.x + TARGET_RING_RADIUS_M * math.cos(angle) + correction[0],
-                    position.y + TARGET_RING_RADIUS_M * math.sin(angle) + correction[1],
-                    position.z + correction[2])
+                    position.x + TARGET_RING_RADIUS_M * math.cos(angle),
+                    position.y + TARGET_RING_RADIUS_M * math.sin(angle),
+                    position.z)
                 ring.append([longitude, latitude])
             self.ring_features.append(
                 ring_feature(detection.id, "out_of_view", ring))
