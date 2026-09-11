@@ -552,6 +552,11 @@ class Vehicle(FrameMember):
             child_frame_id=self.EKF_FRAME,
             transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
         )
+        # Publish immediately as well as on the pose stream.  Consumers such
+        # as scoring and ground projection may start looking up the chain
+        # before the first local-pose sample arrives; holding the transform
+        # until publish_position leaves an apparently disconnected TF tree.
+        self.tf_broadcaster.sendTransform(self.home_t)
 
         (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
         self.ekf_fix_pub.publish(NavSatFix(
