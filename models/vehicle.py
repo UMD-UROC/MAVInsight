@@ -271,6 +271,8 @@ class Vehicle(FrameMember):
         self.fid_t.header = Header(frame_id=fiducial_frame, stamp=self.get_clock().now().to_msg())
         self.fid_t.child_frame_id = self.HOME_FRAME
         self._fiducial_correction = Vector3()
+        self._fiducial_lla = list(self.get_parameter('fiducial_lla').value) \
+            if self.has_parameter('fiducial_lla') else None
         self._fiducial_fix_pub = self.create_publisher(NavSatFix, '/fiducial/fix', reliable_qos)
 
         # home -> ekf origin offset. It is dynamic, because it moves: PX4 moves
@@ -535,11 +537,11 @@ class Vehicle(FrameMember):
             altitude=msg.geo.altitude
         )
         self.home_fix_pub.publish(home_fix)
-        self._fiducial_fix_pub.publish(NavSatFix(
+        if self._fiducial_lla and len(self._fiducial_lla) == 3:
+            self._fiducial_fix_pub.publish(NavSatFix(
             header=Header(frame_id=self.fid_t.header.frame_id, stamp=msg.header.stamp),
-            latitude=float(self.get_parameter('fiducial_lla').value[0]),
-            longitude=float(self.get_parameter('fiducial_lla').value[1]),
-            altitude=float(self.get_parameter('fiducial_lla').value[2])))
+            latitude=float(self._fiducial_lla[0]), longitude=float(self._fiducial_lla[1]),
+            altitude=float(self._fiducial_lla[2])))
         self._home_lla = home_fix
         self._compose_fiducial_edge()
         # hold the new offset. publish_position sends it at the pose rate, so
@@ -563,7 +565,9 @@ class Vehicle(FrameMember):
         """Place HOME from the known fiducial, then apply survey correction."""
         if not hasattr(self, '_home_lla'):
             return
-        fid = self.get_parameter('fiducial_lla').value
+        if not self._fiducial_lla or len(self._fiducial_lla) != 3:
+            return
+        fid = self._fiducial_lla
         base = pm.geodetic2enu(self._home_lla.latitude, self._home_lla.longitude,
                                self._home_lla.altitude, fid[0], fid[1], fid[2], deg=True)
         self.fid_t.transform.translation.x = float(base[0] + self._fiducial_correction.x)
