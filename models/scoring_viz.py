@@ -55,6 +55,8 @@ from collections import OrderedDict
 from typing import NamedTuple
 
 # ROS2 imports
+from rclpy.duration import Duration
+from rclpy.time import Time as RclpyTime
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 
@@ -70,7 +72,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from models.frame_utils import enu_2_lla
 from models.graph_member import GraphMember
 from models.qos_profiles import reliable_qos, viz_qos
-from models.scene_ground import FrameSurvey
+from models.scene_ground import FrameSurvey, TF_TIMEOUT_S
 
 try:
     from foxglove_msgs.msg import (Color, GeoJSON, ImageAnnotations, Point2,
@@ -447,7 +449,13 @@ class ScoringViz(GraphMember):
         the Map pins go out here, because each is a statement about this
         message and nothing else says when it changed.
         """
-        markers = [clear_all(msg.header)]
+        transform = self.fiducial_transform(msg.header.frame_id)
+        if transform is None:
+            # A local marker would look plausible but would follow that
+            # vehicle's home frame, disagreeing with the common scene.
+            return
+        header = Header(frame_id="fiducial", stamp=msg.header.stamp)
+        markers = [clear_all(header)]
         for index, detection in enumerate(msg.detections):
             kind = detection.results[0].hypothesis.class_id if detection.results else "FP"
             color = VERDICT_COLOR.get(kind)
@@ -455,11 +463,13 @@ class ScoringViz(GraphMember):
                 continue
             center = detection.bbox.center.position
             position = Point(x=center.x, y=center.y, z=center.z + MARK_LIFT_M)
+            x, y, z = self.in_fiducial(position, transform)
+            position = Point(x=x, y=y, z=z)
             build, size = ((cross, DETECTION_CROSS_SPAN) if kind in CROSS_VERDICTS
                            else (sphere, DETECTION_DOT_DIAMETER))
             # Namespaced by verdict, so one kind can be switched off in the 3D
             # panel without touching the others.
-            markers.append(build(msg.header, kind, index, position, size, color))
+            markers.append(build(header, kind, index, position, size, color))
         self.verdict_markers = MarkerArray(markers=markers)
         self.verdict_sec = self.now_sec()
         self.publish_annotations(msg)
@@ -467,6 +477,41 @@ class ScoringViz(GraphMember):
 
     def local_fix_cb(self, msg: NavSatFix) -> None:
         self.local_fix = msg
+
+    def fiducial_transform(self, source_frame):
+        """Return the source-frame pose in the known fiducial frame.
+
+        Targets are authored by scoring in its local origin.  A map feature
+        must therefore pass through TF to the common root before it can be
+        converted using ``/fiducial/fix``.  Survey correction is deliberately
+        not an input here: the known fiducial->home edge is the entire link.
+        """
+        if source_frame == "fiducial":
+            return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+        try:
+            t = self.survey.tf_buffer.lookup_transform(
+                "fiducial", source_frame, RclpyTime(),
+                timeout=Duration(seconds=TF_TIMEOUT_S)).transform
+        except Exception as error:
+            self.get_logger().warn(
+                f"no {source_frame} -> fiducial transform for Map features: {error}",
+                throttle_duration_sec=30.0)
+            return None
+        return (t.translation.x, t.translation.y, t.translation.z,
+                t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w)
+
+    @staticmethod
+    def in_fiducial(point, transform):
+        """Apply a ROS transform to one local point."""
+        tx, ty, tz, qx, qy, qz, qw = transform
+        # Quaternion-vector product, expanded to avoid a heavy dependency.
+        ix = qw * point.x + qy * point.z - qz * point.y
+        iy = qw * point.y + qz * point.x - qx * point.z
+        iz = qw * point.z + qx * point.y - qy * point.x
+        iw = -qx * point.x - qy * point.y - qz * point.z
+        return (ix * qw - iw * qx - iy * qz + iz * qy + tx,
+                iy * qw - iw * qy - iz * qx + ix * qz + ty,
+                iz * qw - iw * qz - ix * qy + iy * qx + tz)
 
     def now_sec(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
@@ -566,7 +611,9 @@ class ScoringViz(GraphMember):
                 "no local fix yet, so the Map panel gets no verdicts",
                 throttle_duration_sec=10.0)
             return
-        correction = self.survey.correction()
+        transform = self.fiducial_transform(msg.header.frame_id)
+        if transform is None:
+            return
         features = {kind: [] for kind in self.geojson_pub}
         for detection in msg.detections:
             kind = (detection.results[0].hypothesis.class_id
@@ -574,9 +621,9 @@ class ScoringViz(GraphMember):
             if kind not in features:
                 continue
             center = detection.bbox.center.position
+            x, y, z = self.in_fiducial(center, transform)
             latitude, longitude, _ = enu_2_lla(
-                self.local_fix, center.x + correction[0],
-                center.y + correction[1], center.z + correction[2])
+                self.local_fix, x, y, z)
             features[kind].append(map_feature(detection, latitude, longitude))
         for kind, publisher in self.geojson_pub.items():
             drawn = json.dumps({"type": "FeatureCollection",
@@ -594,18 +641,21 @@ class ScoringViz(GraphMember):
         hundred milliseconds and recoloring them costs under one, so only the
         colors follow the status.
         """
-        correction = None if self.local_fix is None else self.survey.correction()
+        transform = (None if self.local_fix is None else
+                     self.fiducial_transform(msg.header.frame_id))
+        if transform is None:
+            return
         placed = (
             tuple((detection.id,
                    detection.bbox.center.position.x,
                    detection.bbox.center.position.y,
                    detection.bbox.center.position.z,
                    detection.bbox.size.x) for detection in msg.detections),
-            None if correction is None else
+            None if transform is None else
             (self.local_fix.latitude, self.local_fix.longitude,
-             self.local_fix.altitude, tuple(correction)))
+             self.local_fix.altitude, tuple(transform)))
         if placed != self.targets_placed:
-            self.place_targets(msg, correction)
+            self.place_targets(msg, transform)
             self.targets_placed = placed
 
         for index, detection in enumerate(msg.detections):
@@ -620,38 +670,47 @@ class ScoringViz(GraphMember):
                     status, MAP_STATUS_COLOR["out_of_view"])
         self.publish_rings()
 
-    def place_targets(self, msg: Detection3DArray, correction) -> None:
+    def place_targets(self, msg: Detection3DArray, transform) -> None:
         """Build the bubble, the name and the map ring of every target.
 
         Where the targets are and where their frame sits on the Earth fix
         everything here. Both hold still, so this runs when one of them
         changes rather than on every message.
         """
-        markers = [clear_all(msg.header)]
+        header = Header(frame_id="fiducial", stamp=msg.header.stamp)
+        markers = [clear_all(header)]
         self.target_bubbles = []
         self.ring_features = []
         for index, detection in enumerate(msg.detections):
             position = detection.bbox.center.position
+            if transform is None:
+                # There is no safe common placement until the known
+                # fiducial->home chain arrives.
+                continue
+            x, y, z = self.in_fiducial(position, transform)
+            fiducial_position = Point(x=x, y=y, z=z)
             # The gate the estimate was scored against, straight off the wire.
-            bubble = sphere(msg.header, "targets", index, position,
+            bubble = sphere(header, "targets", index, fiducial_position,
                             detection.bbox.size.x, STATUS_COLOR["out_of_view"])
             markers.append(bubble)
             self.target_bubbles.append(bubble)
-            label_position = Point(x=position.x, y=position.y,
-                                   z=position.z + detection.bbox.size.x / 2.0
+            label_position = Point(x=fiducial_position.x, y=fiducial_position.y,
+                                   z=fiducial_position.z + detection.bbox.size.x / 2.0
                                    + LABEL_HEIGHT_M)
-            markers.append(text(msg.header, "target_names", index,
+            markers.append(text(header, "target_names", index,
                                 label_position, detection.id))
-            if correction is None:
+            if self.local_fix is None:
                 continue
             ring = []
             for step in range(TARGET_RING_POINTS + 1):
                 angle = 2.0 * math.pi * step / TARGET_RING_POINTS
+                point = Point(
+                    x=position.x + TARGET_RING_RADIUS_M * math.cos(angle),
+                    y=position.y + TARGET_RING_RADIUS_M * math.sin(angle),
+                    z=position.z)
+                x, y, z = self.in_fiducial(point, transform)
                 latitude, longitude, _ = enu_2_lla(
-                    self.local_fix,
-                    position.x + TARGET_RING_RADIUS_M * math.cos(angle) + correction[0],
-                    position.y + TARGET_RING_RADIUS_M * math.sin(angle) + correction[1],
-                    position.z + correction[2])
+                    self.local_fix, x, y, z)
                 ring.append([longitude, latitude])
             self.ring_features.append(
                 ring_feature(detection.id, "out_of_view", ring))

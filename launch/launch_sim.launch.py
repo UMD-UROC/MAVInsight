@@ -44,6 +44,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'bench', default_value='false', choices=['true', 'false'],
             description='Place the bench vehicle 20 m above its home frame.'),
+        DeclareLaunchArgument(
+            'publish_fiducial_edge', default_value='true', choices=['true', 'false'],
+            description='Publish this vehicle\'s fiducial -> home TF edge. The ground fleet '
+                        'builder is the sole authority when several vehicles share one domain.'),
+        DeclareLaunchArgument('fiducial_lla', default_value='',
+                              description='Known fiducial LLA as lat,lon,alt.'),
         OpaqueFunction(function=frame_tree),
     ])
 
@@ -53,6 +59,8 @@ def frame_tree(context, *args, **kwargs):
     model = LaunchConfiguration('model').perform(context)
     sim = LaunchConfiguration('sim').perform(context) == 'true'
     bench = LaunchConfiguration('bench').perform(context) == 'true'
+    publish_fiducial_edge = LaunchConfiguration('publish_fiducial_edge').perform(context) == 'true'
+    fiducial_lla = LaunchConfiguration('fiducial_lla').perform(context)
 
     resources = Path(get_package_share_directory(PACKAGE)) / 'package_resources'
     global_config = str(resources / 'global_node_config.yaml')
@@ -74,6 +82,10 @@ def frame_tree(context, *args, **kwargs):
             config.update(config.pop('gimbal_reference_by_model')[model])
         if bench and file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
             config['bench_base_altitude'] = 20.0
+        if file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
+            config['publish_fiducial_edge'] = publish_fiducial_edge
+            if fiducial_lla:
+                config['fiducial_lla'] = [float(value) for value in fiducial_lla.split(',')]
 
         nodes.append(Node(
             package=PACKAGE,
