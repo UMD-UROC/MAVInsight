@@ -55,6 +55,8 @@ from collections import OrderedDict
 from typing import NamedTuple
 
 # ROS2 imports
+from rclpy.duration import Duration
+from rclpy.time import Time as RclpyTime
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 
@@ -70,7 +72,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from models.frame_utils import enu_2_lla
 from models.graph_member import GraphMember
 from models.qos_profiles import reliable_qos, viz_qos
-from models.scene_ground import FrameSurvey
+from models.scene_ground import FrameSurvey, TF_TIMEOUT_S
 
 try:
     from foxglove_msgs.msg import (Color, GeoJSON, ImageAnnotations, Point2,
@@ -468,6 +470,41 @@ class ScoringViz(GraphMember):
     def local_fix_cb(self, msg: NavSatFix) -> None:
         self.local_fix = msg
 
+    def fiducial_transform(self, source_frame):
+        """Return the source-frame pose in the known fiducial frame.
+
+        Targets are authored by scoring in its local origin.  A map feature
+        must therefore pass through TF to the common root before it can be
+        converted using ``/fiducial/fix``.  Survey correction is deliberately
+        not an input here: the known fiducial->home edge is the entire link.
+        """
+        if source_frame == "fiducial":
+            return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+        try:
+            t = self.survey.tf_buffer.lookup_transform(
+                "fiducial", source_frame, RclpyTime(),
+                timeout=Duration(seconds=TF_TIMEOUT_S)).transform
+        except Exception as error:
+            self.get_logger().warn(
+                f"no {source_frame} -> fiducial transform for Map features: {error}",
+                throttle_duration_sec=30.0)
+            return None
+        return (t.translation.x, t.translation.y, t.translation.z,
+                t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w)
+
+    @staticmethod
+    def in_fiducial(point, transform):
+        """Apply a ROS transform to one local point."""
+        tx, ty, tz, qx, qy, qz, qw = transform
+        # Quaternion-vector product, expanded to avoid a heavy dependency.
+        ix = qw * point.x + qy * point.z - qz * point.y
+        iy = qw * point.y + qz * point.x - qx * point.z
+        iz = qw * point.z + qx * point.y - qy * point.x
+        iw = -qx * point.x - qy * point.y - qz * point.z
+        return (ix * qw - iw * qx - iy * qz + iz * qy + tx,
+                iy * qw - iw * qy - iz * qx + ix * qz + ty,
+                iz * qw - iw * qz - ix * qy + iy * qx + tz)
+
     def now_sec(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
@@ -566,7 +603,9 @@ class ScoringViz(GraphMember):
                 "no local fix yet, so the Map panel gets no verdicts",
                 throttle_duration_sec=10.0)
             return
-        correction = self.survey.correction()
+        transform = self.fiducial_transform(msg.header.frame_id)
+        if transform is None:
+            return
         features = {kind: [] for kind in self.geojson_pub}
         for detection in msg.detections:
             kind = (detection.results[0].hypothesis.class_id
@@ -574,13 +613,9 @@ class ScoringViz(GraphMember):
             if kind not in features:
                 continue
             center = detection.bbox.center.position
-            # Detection coordinates are already expressed in the shared
-            # fiducial frame.  The map fix is that frame's WGS84 origin, so
-            # applying the vehicle survey correction here a second time shifts
-            # the 2-D result away from the fiducial (the 3-D TF has already
-            # applied it).
+            x, y, z = self.in_fiducial(center, transform)
             latitude, longitude, _ = enu_2_lla(
-                self.local_fix, center.x, center.y, center.z)
+                self.local_fix, x, y, z)
             features[kind].append(map_feature(detection, latitude, longitude))
         for kind, publisher in self.geojson_pub.items():
             drawn = json.dumps({"type": "FeatureCollection",
@@ -598,18 +633,19 @@ class ScoringViz(GraphMember):
         hundred milliseconds and recoloring them costs under one, so only the
         colors follow the status.
         """
-        correction = None if self.local_fix is None else self.survey.correction()
+        transform = (None if self.local_fix is None else
+                     self.fiducial_transform(msg.header.frame_id))
         placed = (
             tuple((detection.id,
                    detection.bbox.center.position.x,
                    detection.bbox.center.position.y,
                    detection.bbox.center.position.z,
                    detection.bbox.size.x) for detection in msg.detections),
-            None if correction is None else
+            None if transform is None else
             (self.local_fix.latitude, self.local_fix.longitude,
-             self.local_fix.altitude, tuple(correction)))
+             self.local_fix.altitude, tuple(transform)))
         if placed != self.targets_placed:
-            self.place_targets(msg, correction)
+            self.place_targets(msg, transform)
             self.targets_placed = placed
 
         for index, detection in enumerate(msg.detections):
@@ -624,7 +660,7 @@ class ScoringViz(GraphMember):
                     status, MAP_STATUS_COLOR["out_of_view"])
         self.publish_rings()
 
-    def place_targets(self, msg: Detection3DArray, correction) -> None:
+    def place_targets(self, msg: Detection3DArray, transform) -> None:
         """Build the bubble, the name and the map ring of every target.
 
         Where the targets are and where their frame sits on the Earth fix
@@ -646,16 +682,18 @@ class ScoringViz(GraphMember):
                                    + LABEL_HEIGHT_M)
             markers.append(text(msg.header, "target_names", index,
                                 label_position, detection.id))
-            if self.local_fix is None:
+            if self.local_fix is None or transform is None:
                 continue
             ring = []
             for step in range(TARGET_RING_POINTS + 1):
                 angle = 2.0 * math.pi * step / TARGET_RING_POINTS
+                point = Point(
+                    x=position.x + TARGET_RING_RADIUS_M * math.cos(angle),
+                    y=position.y + TARGET_RING_RADIUS_M * math.sin(angle),
+                    z=position.z)
+                x, y, z = self.in_fiducial(point, transform)
                 latitude, longitude, _ = enu_2_lla(
-                    self.local_fix,
-                    position.x + TARGET_RING_RADIUS_M * math.cos(angle),
-                    position.y + TARGET_RING_RADIUS_M * math.sin(angle),
-                    position.z)
+                    self.local_fix, x, y, z)
                 ring.append([longitude, latitude])
             self.ring_features.append(
                 ring_feature(detection.id, "out_of_view", ring))
