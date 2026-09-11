@@ -286,8 +286,9 @@ class Vehicle(FrameMember):
 
         # seed the tree with the fiducial frame now rather than at the first 10s
         # timer tick -- consumers expect it to be present from startup
-        if self.publish_fiducial_edge:
-            self.tf_static_broadcaster.sendTransform(self._static_tfs())
+        initial_tfs = self._static_tfs()
+        if self.publish_fiducial_edge and initial_tfs:
+            self.tf_static_broadcaster.sendTransform(initial_tfs)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
@@ -321,10 +322,17 @@ class Vehicle(FrameMember):
     def publish_static_tfs(self):
         # timer cb to occasionaly publish static tfs for late joiners
         # self.fid_t.header.stamp = self.get_clock().now().to_msg() # commenting out for data playback, maybe not needed
-        if self.publish_fiducial_edge:
-            self.tf_static_broadcaster.sendTransform(self._static_tfs())
+        tfs = self._static_tfs()
+        if self.publish_fiducial_edge and tfs:
+            self.tf_static_broadcaster.sendTransform(tfs)
 
     def _static_tfs(self) -> list[TransformStamped]:
+        # Never advertise an identity fiducial edge before GPS has placed
+        # home.  Consumers use this edge to anchor terrain, so an identity at
+        # startup would briefly project the known scene at the fiducial rather
+        # than wait for the real global measurement.
+        if not hasattr(self, '_home_lla') or not self._fiducial_lla:
+            return []
         # sent together in one message: the static broadcaster latches with depth 1,
         # so a late joiner only ever sees the last message sent
         return [self.fid_t]
