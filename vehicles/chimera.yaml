@@ -26,7 +26,7 @@ home_frame_name: uas${N}_home_position
 # The fiducial correction is the ROOT of the tree and its edge points down:
 # fiducial -> home_position. tf_loc looks up an ordinary detection through this
 # frame and a fiducial detection through home_position.
-fiducial_frame: d${N}_fiducial_offset
+fiducial_frame: fiducial
 
 # The gimbal publishes its attitude against a reference frame, but the VEHICLE
 # publishes that reference frame, because the body pose updates far more often

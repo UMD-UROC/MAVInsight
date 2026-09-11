@@ -93,6 +93,10 @@ class Vehicle(FrameMember):
         else:
             fiducial_update_topic = "fiducial_update"
 
+        self.publish_fiducial_edge = bool(
+            self.get_parameter('publish_fiducial_edge').value
+            if self.has_parameter('publish_fiducial_edge') else True)
+
         # Home Position
         if self.has_parameter("home_position_topic"):
             home_pos_topic = self.get_parameter("home_position_topic").get_parameter_value().string_value
@@ -277,7 +281,8 @@ class Vehicle(FrameMember):
 
         # seed the tree with the fiducial frame now rather than at the first 10s
         # timer tick -- consumers expect it to be present from startup
-        self.tf_static_broadcaster.sendTransform(self._static_tfs())
+        if self.publish_fiducial_edge:
+            self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
@@ -311,7 +316,8 @@ class Vehicle(FrameMember):
     def publish_static_tfs(self):
         # timer cb to occasionaly publish static tfs for late joiners
         # self.fid_t.header.stamp = self.get_clock().now().to_msg() # commenting out for data playback, maybe not needed
-        self.tf_static_broadcaster.sendTransform(self._static_tfs())
+        if self.publish_fiducial_edge:
+            self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
     def _static_tfs(self) -> list[TransformStamped]:
         # sent together in one message: the static broadcaster latches with depth 1,
@@ -328,6 +334,8 @@ class Vehicle(FrameMember):
 
         Rotation is ignored; corrections are translation-only.
         """
+        if not self.publish_fiducial_edge:
+            return
         if msg.header.frame_id != self.fid_t.header.frame_id or msg.child_frame_id != self.HOME_FRAME:
             self.get_logger().warn(
                 f"ignoring fiducial_update for {msg.header.frame_id} -> {msg.child_frame_id}; "
