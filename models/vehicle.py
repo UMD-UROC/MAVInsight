@@ -5,6 +5,7 @@ from math import isclose
 from typing import Optional, Tuple
 
 import numpy as np
+import pymap3d as pm
 from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
@@ -269,6 +270,8 @@ class Vehicle(FrameMember):
         self.fid_t = TransformStamped()
         self.fid_t.header = Header(frame_id=fiducial_frame, stamp=self.get_clock().now().to_msg())
         self.fid_t.child_frame_id = self.HOME_FRAME
+        self._fiducial_correction = Vector3()
+        self._fiducial_fix_pub = self.create_publisher(NavSatFix, '/fiducial/fix', reliable_qos)
 
         # home -> ekf origin offset. It is dynamic, because it moves: PX4 moves
         # home at arm and at an EKF origin reset. A static transform has no time
@@ -350,9 +353,8 @@ class Vehicle(FrameMember):
         # what puts the survey back -- but only log when the correction actually moved.
         changed = max(abs(new.x - old.x), abs(new.y - old.y), abs(new.z - old.z)) > 1e-6
 
-        self.fid_t.transform.translation.x = new.x
-        self.fid_t.transform.translation.y = new.y
-        self.fid_t.transform.translation.z = new.z
+        self._fiducial_correction = Vector3(x=new.x, y=new.y, z=new.z)
+        self._compose_fiducial_edge()
         self.fid_t.header.stamp = self.get_clock().now().to_msg()
         self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
@@ -533,6 +535,13 @@ class Vehicle(FrameMember):
             altitude=msg.geo.altitude
         )
         self.home_fix_pub.publish(home_fix)
+        self._fiducial_fix_pub.publish(NavSatFix(
+            header=Header(frame_id=self.fid_t.header.frame_id, stamp=msg.header.stamp),
+            latitude=float(self.get_parameter('fiducial_lla').value[0]),
+            longitude=float(self.get_parameter('fiducial_lla').value[1]),
+            altitude=float(self.get_parameter('fiducial_lla').value[2])))
+        self._home_lla = home_fix
+        self._compose_fiducial_edge()
         # hold the new offset. publish_position sends it at the pose rate, so
         # the step lands on the first pose after this message and the transforms
         # already in the buffer keep the value they were looked up with.
@@ -549,6 +558,20 @@ class Vehicle(FrameMember):
             longitude=lon_e,
             altitude=alt_e
         ))
+
+    def _compose_fiducial_edge(self):
+        """Place HOME from the known fiducial, then apply survey correction."""
+        if not hasattr(self, '_home_lla'):
+            return
+        fid = self.get_parameter('fiducial_lla').value
+        base = pm.geodetic2enu(self._home_lla.latitude, self._home_lla.longitude,
+                               self._home_lla.altitude, fid[0], fid[1], fid[2], deg=True)
+        self.fid_t.transform.translation.x = float(base[0] + self._fiducial_correction.x)
+        self.fid_t.transform.translation.y = float(base[1] + self._fiducial_correction.y)
+        self.fid_t.transform.translation.z = float(base[2] + self._fiducial_correction.z)
+        self.fid_t.header.stamp = self.get_clock().now().to_msg()
+        if self.publish_fiducial_edge:
+            self.tf_static_broadcaster.sendTransform(self._static_tfs())
 
     def publish_path(self):
         if self.path.poses:
