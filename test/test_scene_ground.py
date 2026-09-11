@@ -24,20 +24,21 @@ def sloped_surface():
     ])
 
 
-def test_reported_home_altitude_does_not_move_the_scene_ground():
+def test_reported_home_altitude_places_scene_at_real_vertical_separation():
     anchor = as_fix(ORIGIN)
     low = grounded_scene_offset(fix_at(25.0, 0.0, 9.0), anchor,
                                 np.zeros(3), sloped_surface())
     high = grounded_scene_offset(fix_at(25.0, 0.0, 49.0), anchor,
                                  np.zeros(3), sloped_surface())
-    assert low == pytest.approx(high, abs=1e-3)
-    assert low[2] + sloped_surface().height(-low[0], -low[1]) \
-        == pytest.approx(-GROUND_CLEARANCE_M)
+    assert low[:2] == pytest.approx(high[:2], abs=1e-3)
+    assert low[2] - high[2] == pytest.approx(40.0, abs=1e-3)
+    assert low[2] == pytest.approx(1.5 - GROUND_CLEARANCE_M, abs=1e-3)
 
 
-def test_vertical_fiducial_correction_overrides_grounded_home():
+def test_vertical_fiducial_correction_is_applied_to_geodetic_scene_offset():
     anchor = as_fix(ORIGIN)
     offset = grounded_scene_offset(
         fix_at(0.0, 0.0, 40.0), anchor, (0.0, 0.0, 1.75),
         sloped_surface())
-    assert offset[2] == pytest.approx(-GROUND_CLEARANCE_M - 1.75)
+    assert offset[2] == pytest.approx(10.5 - 40.0 - GROUND_CLEARANCE_M - 1.75,
+                                      abs=1e-3)

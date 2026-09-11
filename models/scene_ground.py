@@ -108,18 +108,18 @@ class TerrainSurface:
 
 def grounded_scene_offset(local_fix: NavSatFix, scene_anchor: NavSatFix,
                           correction, surface: Optional[TerrainSurface]):
-    """Put the terrain below corrected home at zero, then apply survey z."""
+    """Place a geodetic scene origin in the reference frame.
+
+    ``scene_anchor`` and ``local_fix`` are ellipsoidal WGS84 positions.  The
+    full ENU result therefore includes their measured vertical separation;
+    terrain grid heights are already relative to the scene anchor and must
+    not be used to invent a home/fiducial altitude.
+    """
     correction = np.asarray(correction, dtype=float)
-    east, north, _ = lla_2_enu(local_fix, scene_anchor, ignore_alt=True)
-    placed_east = float(east - correction[0])
-    placed_north = float(north - correction[1])
-    home_ground = 0.0 if surface is None else surface.height(
-        -placed_east, -placed_north)
-    return np.array([
-        placed_east,
-        placed_north,
-        -home_ground - GROUND_CLEARANCE_M - float(correction[2]),
-    ])
+    east, north, up = lla_2_enu(local_fix, scene_anchor, ignore_alt=False)
+    return np.array([float(east - correction[0]),
+                     float(north - correction[1]),
+                     float(up - correction[2] - GROUND_CLEARANCE_M)])
 
 
 class FrameSurvey:

@@ -449,7 +449,13 @@ class ScoringViz(GraphMember):
         the Map pins go out here, because each is a statement about this
         message and nothing else says when it changed.
         """
-        markers = [clear_all(msg.header)]
+        transform = self.fiducial_transform(msg.header.frame_id)
+        if transform is None:
+            # A local marker would look plausible but would follow that
+            # vehicle's home frame, disagreeing with the common scene.
+            return
+        header = Header(frame_id="fiducial", stamp=msg.header.stamp)
+        markers = [clear_all(header)]
         for index, detection in enumerate(msg.detections):
             kind = detection.results[0].hypothesis.class_id if detection.results else "FP"
             color = VERDICT_COLOR.get(kind)
@@ -457,11 +463,13 @@ class ScoringViz(GraphMember):
                 continue
             center = detection.bbox.center.position
             position = Point(x=center.x, y=center.y, z=center.z + MARK_LIFT_M)
+            x, y, z = self.in_fiducial(position, transform)
+            position = Point(x=x, y=y, z=z)
             build, size = ((cross, DETECTION_CROSS_SPAN) if kind in CROSS_VERDICTS
                            else (sphere, DETECTION_DOT_DIAMETER))
             # Namespaced by verdict, so one kind can be switched off in the 3D
             # panel without touching the others.
-            markers.append(build(msg.header, kind, index, position, size, color))
+            markers.append(build(header, kind, index, position, size, color))
         self.verdict_markers = MarkerArray(markers=markers)
         self.verdict_sec = self.now_sec()
         self.publish_annotations(msg)
@@ -635,6 +643,8 @@ class ScoringViz(GraphMember):
         """
         transform = (None if self.local_fix is None else
                      self.fiducial_transform(msg.header.frame_id))
+        if transform is None:
+            return
         placed = (
             tuple((detection.id,
                    detection.bbox.center.position.x,
@@ -667,22 +677,29 @@ class ScoringViz(GraphMember):
         everything here. Both hold still, so this runs when one of them
         changes rather than on every message.
         """
-        markers = [clear_all(msg.header)]
+        header = Header(frame_id="fiducial", stamp=msg.header.stamp)
+        markers = [clear_all(header)]
         self.target_bubbles = []
         self.ring_features = []
         for index, detection in enumerate(msg.detections):
             position = detection.bbox.center.position
+            if transform is None:
+                # There is no safe common placement until the known
+                # fiducial->home chain arrives.
+                continue
+            x, y, z = self.in_fiducial(position, transform)
+            fiducial_position = Point(x=x, y=y, z=z)
             # The gate the estimate was scored against, straight off the wire.
-            bubble = sphere(msg.header, "targets", index, position,
+            bubble = sphere(header, "targets", index, fiducial_position,
                             detection.bbox.size.x, STATUS_COLOR["out_of_view"])
             markers.append(bubble)
             self.target_bubbles.append(bubble)
-            label_position = Point(x=position.x, y=position.y,
-                                   z=position.z + detection.bbox.size.x / 2.0
+            label_position = Point(x=fiducial_position.x, y=fiducial_position.y,
+                                   z=fiducial_position.z + detection.bbox.size.x / 2.0
                                    + LABEL_HEIGHT_M)
-            markers.append(text(msg.header, "target_names", index,
+            markers.append(text(header, "target_names", index,
                                 label_position, detection.id))
-            if self.local_fix is None or transform is None:
+            if self.local_fix is None:
                 continue
             ring = []
             for step in range(TARGET_RING_POINTS + 1):
