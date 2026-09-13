@@ -49,6 +49,8 @@ whole building into one shade.
 Subscribes
     <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
                             <reference_frame>
+    <mosaic_overlay_topic>  cdcl_umd_msgs/MosaicOverlay, the live vehicle map
+                            to drape over building surfaces. Empty disables it.
 Publishes
     <buildings_viz_topic>   foxglove_msgs/SceneUpdate, latched
 """
@@ -67,6 +69,7 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 
 # ROS2 message imports
+from cdcl_umd_msgs.msg import MosaicOverlay
 from foxglove_msgs.msg import Color, ModelPrimitive, SceneEntity, SceneUpdate
 from geometry_msgs.msg import Quaternion, Vector3
 
@@ -74,6 +77,7 @@ from geometry_msgs.msg import Quaternion, Vector3
 from models import gltf
 from models.graph_member import GraphMember
 from models.scene_ground import SceneGround
+from models.scene_texture import composite_overlay
 
 
 # --------------------------------------------------------------- appearance
@@ -99,6 +103,12 @@ RELOAD_CHECK_S = 2.0
 LATCHED_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
+LIVE_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
     history=HistoryPolicy.KEEP_LAST,
     depth=1,
 )
@@ -379,6 +389,7 @@ class BuildingsViz(GraphMember):
                 f"its roofs out of register with the ground under them.")
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "buildings_viz_topic", "/viz/scene/buildings")
+        mosaic_topic = param(self, "mosaic_overlay_topic", "")
 
         self.scene_pub = self.create_publisher(SceneUpdate, viz_topic, LATCHED_QOS)
         # The model as it was last built, with the line that describes it. The
@@ -390,6 +401,13 @@ class BuildingsViz(GraphMember):
         # The mtime the held model was built from. No file has been read yet,
         # and an mtime never takes this value.
         self.model_stamp = 0
+        self.mosaic = None
+        self.mosaic_drawn = None
+
+        if mosaic_topic:
+            self.create_subscription(MosaicOverlay, mosaic_topic, self.mosaic_cb, LIVE_QOS)
+            self.get_logger().info(
+                f"[{self.DISPLAY_NAME}]: the vehicle's map is drawn over building surfaces from {mosaic_topic}")
 
         if self.path is None:
             self.ground = None
@@ -404,6 +422,10 @@ class BuildingsViz(GraphMember):
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Buildings visualization initialized!")
 
+    def mosaic_cb(self, msg: MosaicOverlay) -> None:
+        """Hold the newest map; the timer coalesces bursts into one model rebuild."""
+        self.mosaic = msg
+
     def publish_when_changed(self) -> None:
         """Draw the scene again when its file changes, and when the ground it
         stands on moves under it. The file is read once for each change and
@@ -413,8 +435,11 @@ class BuildingsViz(GraphMember):
             stamp = self.path.stat().st_mtime_ns
         except OSError:
             stamp = None
-        if stamp != self.model_stamp:
+        mosaic_stamp = None if self.mosaic is None else (
+            self.mosaic.header.stamp.sec, self.mosaic.header.stamp.nanosec)
+        if stamp != self.model_stamp or mosaic_stamp != self.mosaic_drawn:
             self.model_stamp = stamp
+            self.mosaic_drawn = mosaic_stamp
             self.ground.drawn_at = None
             if stamp is None:
                 self.get_logger().info(
@@ -435,17 +460,33 @@ class BuildingsViz(GraphMember):
         """Nothing to draw, which clears the panel."""
         return SceneUpdate(deletions=[], entities=[])
 
-    def texture(self):
-        """The scene's satellite image, no wider than asked for, or a plain
-        shade where the scene has none."""
+    def texture(self, positions, uvs):
+        """Scene image with the live mosaic draped through this model's UV map."""
         if self.texture_path is None or not self.texture_path.is_file():
-            return flat_image(), (2, 2)
-        image = Image.open(self.texture_path)
-        if max(image.size) > self.texture_px:
-            image.thumbnail((self.texture_px, self.texture_px))
+            base = Image.new("RGB", (self.texture_px, self.texture_px),
+                             tuple(int(255 * c) for c in DEFAULT_SURFACE_COLOR))
+        else:
+            base = Image.open(self.texture_path).convert("RGB")
+            if max(base.size) > self.texture_px:
+                base.thumbnail((self.texture_px, self.texture_px))
+        note = ""
+        if self.mosaic is not None:
+            try:
+                drawn, box, covered = composite_overlay(
+                    base, self.mosaic, self.scene_origin_lla, positions, uvs)
+                if box is not None:
+                    base = drawn
+                    note = f", vehicle map over {covered * 100.0:.1f}% of the roof texture"
+                else:
+                    self.get_logger().warn(
+                        "the mosaic cannot be georeferenced against the building scene",
+                        throttle_duration_sec=30.0)
+            except (OSError, ValueError) as error:
+                self.get_logger().warn(f"cannot read the mosaic overlay: {error}",
+                                       throttle_duration_sec=30.0)
         packed = io.BytesIO()
-        image.convert("RGB").save(packed, "JPEG", quality=88)
-        return packed.getvalue(), image.size
+        base.save(packed, "JPEG", quality=88)
+        return packed.getvalue(), base.size, note
 
     def build_model(self) -> bool:
         """Read the buildings on disk and hold them as one textured model, in
@@ -500,13 +541,14 @@ class BuildingsViz(GraphMember):
         if not points:
             return False
 
-        image, size = self.texture()
-        self.model_bytes = gltf.textured_mesh(
-            np.asarray(points, dtype=float), satellite_uvs(points, self.side_m),
-            np.arange(len(points), dtype=np.uint32), image, "image/jpeg")
         self.scene_origin_lla = origin
+        positions = np.asarray(points, dtype=float)
+        uvs = satellite_uvs(points, self.side_m)
+        image, size, mosaic_note = self.texture(positions, uvs)
+        self.model_bytes = gltf.textured_mesh(
+            positions, uvs, np.arange(len(points), dtype=np.uint32), image, "image/jpeg")
         self.model_note = (f"{drawn} buildings, {len(points) // 3} triangles "
-                           f"and a {size[0]}x{size[1]} image, from {self.path}, "
+                           f"and a {size[0]}x{size[1]} image{mosaic_note}, from {self.path}, "
                            f"{len(self.model_bytes) // 1024} kB")
         return True
 

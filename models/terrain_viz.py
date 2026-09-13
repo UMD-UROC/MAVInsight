@@ -84,9 +84,9 @@ from geometry_msgs.msg import Quaternion, Vector3
 
 # MAVInsight imports
 from models import gltf
-from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
-from models.scene_ground import SceneGround, as_fix
+from models.scene_ground import SceneGround
+from models.scene_texture import composite_overlay, overlay_box_enu
 
 COLLADA = "{http://www.collada.org/2005/11/COLLADASchema}"
 ENTITY_ID = "scene_terrain"
@@ -123,55 +123,6 @@ def float_array(root, ending):
             values = source.find(f"{COLLADA}float_array")
             return np.fromstring(values.text, sep=" ")
     raise ValueError(f"the mesh carries no {ending} array")
-
-
-def enu_to_uv_affine(positions, uvs):
-    """The mesh's own east and north to texture coordinate map, as one affine.
-
-    The mesh carries a texture coordinate per vertex, written from the imagery
-    georeference, so this is the map the picture is already registered by
-    rather than a stretch across the scene square. Fitted by least squares over
-    every vertex; the residual is under a twentieth of a texture pixel on both
-    built scenes, because a few hundred metres of web mercator is a plane.
-
-    Answers the 2x3 matrix that takes (1, east, north) to (u, v).
-    """
-    design = np.column_stack([np.ones(len(positions)), positions[:, 0],
-                              positions[:, 1]])
-    return np.linalg.lstsq(design, uvs, rcond=None)[0].T
-
-
-def texture_to_mosaic(affine, texture_size, mosaic_box, mosaic_size):
-    """The six numbers PIL warps the mosaic into the texture with.
-
-    PIL asks for the map from the output image back to the input, so this is
-    texture pixel to scene east and north through the mesh's own affine, then
-    east and north to mosaic pixel through the box the mosaic was exported
-    with. Both are affine, so the pair is one affine.
-
-    `mosaic_box` is (west, south, east, north) in scene metres, at the centres
-    of the mosaic's corner pixels, which is what its bounds name.
-    """
-    texture_w, texture_h = texture_size
-    mosaic_w, mosaic_h = mosaic_size
-    # Texture pixel to (u, v). v is measured up from the bottom of the image.
-    to_uv = np.array([[1.0 / texture_w, 0.0, 0.0],
-                      [0.0, -1.0 / texture_h, 1.0],
-                      [0.0, 0.0, 1.0]])
-    # East and north to (u, v) is the mesh's affine; turn it round.
-    to_uv_from_enu = np.array([[affine[0, 1], affine[0, 2], affine[0, 0]],
-                               [affine[1, 1], affine[1, 2], affine[1, 0]],
-                               [0.0, 0.0, 1.0]])
-    to_enu = np.linalg.inv(to_uv_from_enu)
-    # East and north to mosaic pixel. The mosaic is north up and west left,
-    # so its rows count south.
-    west, south, east, north = mosaic_box
-    across = (mosaic_w - 1) / (east - west)
-    down = (mosaic_h - 1) / (north - south)
-    to_pixel = np.array([[across, 0.0, -west * across],
-                         [0.0, -down, north * down],
-                         [0.0, 0.0, 1.0]])
-    return tuple((to_pixel @ to_enu @ to_uv)[:2].ravel())
 
 
 def grid_side(vertices: int) -> int:
@@ -322,26 +273,13 @@ class TerrainViz(GraphMember):
         return packed.getvalue(), image.size, note
 
     def mosaic_box(self):
-        """The mosaic's corners in scene metres, west, south, east and north.
-
-        None where there is no mosaic yet, or where its corners do not make a
-        box. The mosaic names a latitude and longitude pair and the scene is
-        measured from its own centre, so the two meet here.
-        """
-        if self.mosaic is None or self.scene_origin_lla is None:
-            return None
-        anchor = as_fix((self.scene_origin_lla[0], self.scene_origin_lla[1], 0.0))
-        west, south, _ = lla_2_enu(
-            anchor, as_fix((self.mosaic.sw_lat, self.mosaic.sw_lon, 0.0)))
-        east, north, _ = lla_2_enu(
-            anchor, as_fix((self.mosaic.ne_lat, self.mosaic.ne_lon, 0.0)))
-        if not (east > west and north > south):
+        """The live overlay bounds in this scene's ENU coordinates."""
+        box = overlay_box_enu(self.mosaic, self.scene_origin_lla)
+        if box is None and self.mosaic is not None and self.scene_origin_lla is not None:
             self.get_logger().warn(
-                f"the mosaic's corners do not make a box "
-                f"({west:.1f}..{east:.1f} east, {south:.1f}..{north:.1f} "
-                f"north), so it is not drawn", throttle_duration_sec=30.0)
-            return None
-        return (west, south, east, north)
+                "the mosaic's corners do not make a valid scene box, so it is not drawn",
+                throttle_duration_sec=30.0)
+        return box
 
     def image_px(self, positions) -> int:
         """How wide to draw the scene's image, in pixels.
@@ -363,39 +301,19 @@ class TerrainViz(GraphMember):
         return min(self.texture_px, raster)
 
     def with_mosaic(self, base, positions, uvs):
-        """A copy of the satellite image with the vehicle's map over it.
-
-        The map arrives as a PNG whose alpha is its coverage, and as the
-        latitude and longitude box it covers. Both corners are put in scene
-        coordinates and the map is warped through one affine into the image,
-        so nothing is resampled twice and nothing has to know the imagery's
-        own georeference.
-
-        Answers the base image unchanged, and says why, if the map cannot be
-        read or does not meet the scene.
-        """
-        box = self.mosaic_box()
-        if box is None:
-            return base, ""
+        """Drape the live map with the shared scene-texture implementation."""
         try:
-            overlay = Image.open(io.BytesIO(bytes(self.mosaic.overlay_png.data)))
+            drawn, box, covered = composite_overlay(
+                base, self.mosaic, self.scene_origin_lla, positions, uvs)
         except (OSError, ValueError) as error:
             self.get_logger().warn(f"cannot read the mosaic overlay: {error}",
                                    throttle_duration_sec=30.0)
             return base, ""
-        overlay = overlay.convert("RGBA")
-
+        if box is None:
+            return base, ""
         west, south, east, north = box
-        coefficients = texture_to_mosaic(
-            enu_to_uv_affine(positions.reshape(-1, 3), uvs.reshape(-1, 2)),
-            base.size, box, overlay.size)
-        placed = overlay.transform(base.size, Image.AFFINE, coefficients,
-                                   resample=Image.BILINEAR)
-        drawn = base.copy()
-        drawn.paste(placed, (0, 0), placed)
-        covered = 100.0 * float(np.asarray(placed)[..., 3].astype(bool).mean())
-        return drawn, (f", the vehicle's map over {covered:.1f}% of it "
-                       f"({overlay.size[0]}x{overlay.size[1]} px, "
+        return drawn, (f", the vehicle's map over {covered * 100.0:.1f}% of it "
+                       f"({self.mosaic.width_px}x{self.mosaic.height_px} px, "
                        f"{east - west:.0f}x{north - south:.0f} m)")
 
     def build_model(self) -> bool:
