@@ -14,3 +14,10 @@ reliable_qos = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
 )
+
+latched_reliable_qos = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)

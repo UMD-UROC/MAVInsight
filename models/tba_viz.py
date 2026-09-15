@@ -138,7 +138,8 @@ class TBA_Viz(GraphMember):
         # drone's own fix, plus the drone's pose in that frame. The fiducial correction rides
         # on BOTH the target fix and uav_gps_location, so it cancels here and the marker lands
         # at raw origin-frame coordinates -- which is what LOC_FRAME names. The correction is
-        # then applied exactly once, by the fiducial -> home edge, at render time.
+        # then applied exactly once, by the home_uncorrected -> home_position
+        # edge, at render time.
         #
         # ignore_alt must stay False on all three: the default (True) substitutes the
         # reference's altitude for the target's, which zeroes u and pins the marker to the

@@ -25,10 +25,11 @@ parent_frame: uas${N}_ekf_origin
 pose_frame: enu_flu
 ekf_origin_frame: uas${N}_ekf_origin
 home_frame_name: uas${N}_home_position
+uncorrected_home_frame_name: uas${N}_home_uncorrected
 
-# The fiducial correction is the ROOT of the tree and its edge points down:
-# fiducial -> home_position. tf_loc looks up an ordinary detection through this
-# frame and a fiducial detection through home_position.
+# Keep the GPS-derived placement and fiducial correction on separate edges:
+# fiducial -> home_uncorrected -> home_position. Existing consumers retain the
+# corrected home_position frame while a survey can explicitly use the raw one.
 fiducial_frame: fiducial
 
 # The gimbal publishes its attitude against a reference frame, but the VEHICLE

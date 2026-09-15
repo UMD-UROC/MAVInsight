@@ -25,7 +25,8 @@ from models.gimbal_frame import (FLAGS_NEUTRAL, FLAGS_PITCH_LOCK,
                                  FLAGS_YAW_LOCK, gimbal_reference_from_body,
                                  yaw_is_earth_referenced)
 from models.platforms import Platforms
-from models.qos_profiles import reliable_qos, viz_qos
+from models.qos_profiles import latched_reliable_qos, reliable_qos, viz_qos
+
 
 class Vehicle(FrameMember):
     """Class/Node that defines a generic vehicle (typically a drone) and its sensors.
@@ -85,9 +86,9 @@ class Vehicle(FrameMember):
             raise RuntimeError(f"Vehicle Node: {self.DISPLAY_NAME} ekf origin frame param not set. Unable to initialize Vehicle node.")
 
         if self.has_parameter("fiducial_frame"):
-            fiducial_frame = self.get_parameter("fiducial_frame").get_parameter_value().string_value
+            self.FIDUCIAL_FRAME = self.get_parameter("fiducial_frame").get_parameter_value().string_value
         else:
-            fiducial_frame = "fiducial"
+            self.FIDUCIAL_FRAME = "fiducial"
 
         if self.has_parameter("fiducial_update_topic"):
             fiducial_update_topic = self.get_parameter("fiducial_update_topic").get_parameter_value().string_value
@@ -116,6 +117,17 @@ class Vehicle(FrameMember):
         else:
             self.default_parameter_warning("home_frame_name")
             self.HOME_FRAME = "home_position"
+
+        if self.has_parameter("uncorrected_home_frame_name"):
+            self.UNCORRECTED_HOME_FRAME = self.get_parameter(
+                "uncorrected_home_frame_name").get_parameter_value().string_value
+        else:
+            self.default_parameter_warning("uncorrected_home_frame_name")
+            suffix = "_home_position"
+            self.UNCORRECTED_HOME_FRAME = (
+                f"{self.HOME_FRAME[:-len(suffix)]}_home_uncorrected"
+                if self.HOME_FRAME.endswith(suffix)
+                else f"{self.HOME_FRAME}_uncorrected")
 
         # Location Topic
         if self.has_parameter("location_topic"):
@@ -172,7 +184,9 @@ class Vehicle(FrameMember):
         self.create_subscription(self.LOCATION_MSG_TYPE, self.LOCATION_TOPIC, self.publish_position, viz_qos)
         self.create_subscription(HomePosition, home_pos_topic, self.home_cb, viz_qos)
         self.create_subscription(TwistStamped, velocity_topic, self.update_velocity, viz_qos)
-        self.create_subscription(TransformStamped, fiducial_update_topic, self.update_fiducial, reliable_qos)
+        self.create_subscription(
+            TransformStamped, fiducial_update_topic, self.update_fiducial,
+            latched_reliable_qos)
         self.ALTITUDE = None
         self.VELOCITY = None
 
@@ -264,12 +278,20 @@ class Vehicle(FrameMember):
         # Publisher timers
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
-        self.create_timer(10.0, self.publish_static_tfs)
 
-        # fiducial -> home: the shared fiducial frame parents every vehicle's home position
-        self.fid_t = TransformStamped()
-        self.fid_t.header = Header(frame_id=fiducial_frame, stamp=self.get_clock().now().to_msg())
-        self.fid_t.child_frame_id = self.HOME_FRAME
+        # Split global GPS placement from the survey correction so both are
+        # inspectable: fiducial -> home_uncorrected -> home_position.
+        self.raw_home_t = TransformStamped()
+        self.raw_home_t.header = Header(
+            frame_id=self.FIDUCIAL_FRAME, stamp=self.get_clock().now().to_msg())
+        self.raw_home_t.child_frame_id = self.UNCORRECTED_HOME_FRAME
+        self.raw_home_t.transform.rotation.w = 1.0
+        self.correction_t = TransformStamped()
+        self.correction_t.header = Header(
+            frame_id=self.UNCORRECTED_HOME_FRAME,
+            stamp=self.get_clock().now().to_msg())
+        self.correction_t.child_frame_id = self.HOME_FRAME
+        self.correction_t.transform.rotation.w = 1.0
         self._fiducial_correction = Vector3()
         self._fiducial_lla = list(self.get_parameter('fiducial_lla').value) \
             if self.has_parameter('fiducial_lla') else None
@@ -283,12 +305,6 @@ class Vehicle(FrameMember):
         # republishing home_position/home and one sample per update leaves the
         # chain un-lookupable in between.
         self.home_t = None
-
-        # seed the tree with the fiducial frame now rather than at the first 10s
-        # timer tick -- consumers expect it to be present from startup
-        initial_tfs = self._static_tfs()
-        if self.publish_fiducial_edge and initial_tfs:
-            self.tf_static_broadcaster.sendTransform(initial_tfs)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Vehicle initialized!")
 
@@ -319,44 +335,37 @@ class Vehicle(FrameMember):
                 f"Yaw Lock: {self.yaw_lock_commanded}\n"
                 f"Yaw Frame: {yaw_frame}")
 
-    def publish_static_tfs(self):
-        # timer cb to occasionaly publish static tfs for late joiners
-        # self.fid_t.header.stamp = self.get_clock().now().to_msg() # commenting out for data playback, maybe not needed
-        tfs = self._static_tfs()
-        if self.publish_fiducial_edge and tfs:
-            self.tf_static_broadcaster.sendTransform(tfs)
-
-    def _static_tfs(self) -> list[TransformStamped]:
-        # Never advertise an identity fiducial edge before GPS has placed
-        # home.  Consumers use this edge to anchor terrain, so an identity at
-        # startup would briefly project the known scene at the fiducial rather
-        # than wait for the real global measurement.
-        if not hasattr(self, '_home_lla') or not self._fiducial_lla:
+    def _root_tfs(self, stamp) -> list[TransformStamped]:
+        """Return the mutable raw-home and correction edges at ``stamp``."""
+        if (not self.publish_fiducial_edge
+                or not hasattr(self, '_home_lla') or not self._fiducial_lla):
             return []
-        # sent together in one message: the static broadcaster latches with depth 1,
-        # so a late joiner only ever sees the last message sent
-        return [self.fid_t]
+        self.raw_home_t.header.stamp = stamp
+        self.correction_t.header.stamp = stamp
+        return [self.raw_home_t, self.correction_t]
 
     def update_fiducial(self, msg: TransformStamped):
-        """`fiducial_update` IS this vehicle's fiducial -> home edge, applied verbatim.
+        """Apply a correction-only raw-home -> corrected-home update.
 
         The translation is the correction E = surveyed - measured: a point sitting at `p` in
-        the raw home frame belongs at `p + E` in the fiducial frame. tf_loc publishes exactly
-        that, so there is no sign flip here -- the header and the payload agree, and the edge
-        can be read straight off the wire.
+        the raw home frame belongs at `p + E` in the corrected home frame. New publishers name
+        that edge directly. The old fiducial -> home parent is accepted for bag compatibility;
+        its payload also contained only E despite the legacy frame name.
 
         Rotation is ignored; corrections are translation-only.
         """
         if not self.publish_fiducial_edge:
             return
-        if msg.header.frame_id != self.fid_t.header.frame_id or msg.child_frame_id != self.HOME_FRAME:
+        if (msg.header.frame_id not in (self.UNCORRECTED_HOME_FRAME,
+                                        self.FIDUCIAL_FRAME)
+                or msg.child_frame_id != self.HOME_FRAME):
             self.get_logger().warn(
                 f"ignoring fiducial_update for {msg.header.frame_id} -> {msg.child_frame_id}; "
-                f"this vehicle publishes {self.fid_t.header.frame_id} -> {self.HOME_FRAME}"
+                f"expected {self.UNCORRECTED_HOME_FRAME} -> {self.HOME_FRAME}"
             )
             return
 
-        old, new = self.fid_t.transform.translation, msg.transform.translation
+        old, new = self._fiducial_correction, msg.transform.translation
         # tf_loc publishes a survey once and latches it, so this node is re-told the standing
         # correction whenever it restarts, and the update usually carries a value we already
         # hold. Re-broadcast regardless -- a restart comes up with an identity edge and this is
@@ -364,13 +373,14 @@ class Vehicle(FrameMember):
         changed = max(abs(new.x - old.x), abs(new.y - old.y), abs(new.z - old.z)) > 1e-6
 
         self._fiducial_correction = Vector3(x=new.x, y=new.y, z=new.z)
-        self._compose_fiducial_edge()
-        self.fid_t.header.stamp = self.get_clock().now().to_msg()
-        self.tf_static_broadcaster.sendTransform(self._static_tfs())
+        self._compose_fiducial_edges()
+        root_tfs = self._root_tfs(self.get_clock().now().to_msg())
+        if root_tfs:
+            self.tf_broadcaster.sendTransform(root_tfs)
 
         if changed:
             self.get_logger().info(
-                f"updated fiducial transform: ({new.x:+.2f}, {new.y:+.2f}, {new.z:+.2f})m"
+                f"updated fiducial correction: ({new.x:+.2f}, {new.y:+.2f}, {new.z:+.2f})m"
             )
         else:
             self.get_logger().debug("fiducial transform re-asserted (unchanged)")
@@ -455,12 +465,12 @@ class Vehicle(FrameMember):
         # Every frame this callback builds shares one stamp, so they go out in
         # one message. Separate sends make one /tf message each and a listener
         # pays per message.
-        tfs = [TransformStamped(
+        tfs = self._root_tfs(head_out.stamp) + [TransformStamped(
             header=head_out, child_frame_id=self.FRAME_NAME, transform=tf_out
         )]
 
         # The home offset rides the pose rate so that it has a real time extent.
-        # home_cb only holds the value; this is the one place that sends it.
+        # home_cb also sends once immediately to connect the tree at startup.
         if self.home_t is not None:
             self.home_t.header.stamp = head_out.stamp
             tfs.append(self.home_t)
@@ -547,11 +557,12 @@ class Vehicle(FrameMember):
         self.home_fix_pub.publish(home_fix)
         if self._fiducial_lla and len(self._fiducial_lla) == 3:
             self._fiducial_fix_pub.publish(NavSatFix(
-            header=Header(frame_id=self.fid_t.header.frame_id, stamp=msg.header.stamp),
-            latitude=float(self._fiducial_lla[0]), longitude=float(self._fiducial_lla[1]),
-            altitude=float(self._fiducial_lla[2])))
+                header=Header(frame_id=self.FIDUCIAL_FRAME, stamp=msg.header.stamp),
+                latitude=float(self._fiducial_lla[0]),
+                longitude=float(self._fiducial_lla[1]),
+                altitude=float(self._fiducial_lla[2])))
         self._home_lla = home_fix
-        self._compose_fiducial_edge()
+        self._compose_fiducial_edges()
         # hold the new offset. publish_position sends it at the pose rate, so
         # the step lands on the first pose after this message and the transforms
         # already in the buffer keep the value they were looked up with.
@@ -564,7 +575,8 @@ class Vehicle(FrameMember):
         # as scoring and ground projection may start looking up the chain
         # before the first local-pose sample arrives; holding the transform
         # until publish_position leaves an apparently disconnected TF tree.
-        self.tf_broadcaster.sendTransform(self.home_t)
+        self.tf_broadcaster.sendTransform(
+            self._root_tfs(msg.header.stamp) + [self.home_t])
 
         (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
         self.ekf_fix_pub.publish(NavSatFix(
@@ -574,8 +586,8 @@ class Vehicle(FrameMember):
             altitude=alt_e
         ))
 
-    def _compose_fiducial_edge(self):
-        """Place HOME from the known fiducial, then apply survey correction."""
+    def _compose_fiducial_edges(self):
+        """Place raw HOME from GPS and publish the survey as its own edge."""
         if not hasattr(self, '_home_lla'):
             return
         if not self._fiducial_lla or len(self._fiducial_lla) != 3:
@@ -583,12 +595,18 @@ class Vehicle(FrameMember):
         fid = self._fiducial_lla
         base = pm.geodetic2enu(self._home_lla.latitude, self._home_lla.longitude,
                                self._home_lla.altitude, fid[0], fid[1], fid[2], deg=True)
-        self.fid_t.transform.translation.x = float(base[0] + self._fiducial_correction.x)
-        self.fid_t.transform.translation.y = float(base[1] + self._fiducial_correction.y)
-        self.fid_t.transform.translation.z = float(base[2] + self._fiducial_correction.z)
-        self.fid_t.header.stamp = self.get_clock().now().to_msg()
-        if self.publish_fiducial_edge:
-            self.tf_static_broadcaster.sendTransform(self._static_tfs())
+        self.raw_home_t.transform.translation.x = float(base[0])
+        self.raw_home_t.transform.translation.y = float(base[1])
+        self.raw_home_t.transform.translation.z = float(base[2])
+        self.raw_home_t.transform.rotation.w = 1.0
+        self.correction_t.transform.translation = Vector3(
+            x=self._fiducial_correction.x,
+            y=self._fiducial_correction.y,
+            z=self._fiducial_correction.z)
+        self.correction_t.transform.rotation.w = 1.0
+        stamp = self.get_clock().now().to_msg()
+        self.raw_home_t.header.stamp = stamp
+        self.correction_t.header.stamp = stamp
 
     def publish_path(self):
         if self.path.poses:

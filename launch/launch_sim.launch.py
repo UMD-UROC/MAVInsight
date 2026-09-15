@@ -46,8 +46,9 @@ def generate_launch_description():
             description='Place the bench vehicle 20 m above its home frame.'),
         DeclareLaunchArgument(
             'publish_fiducial_edge', default_value='true', choices=['true', 'false'],
-            description='Publish this vehicle\'s fiducial -> home TF edge. The ground fleet '
-                        'builder is the sole authority when several vehicles share one domain.'),
+            description='Publish this vehicle\'s fiducial -> raw home -> corrected home TF '
+                        'edges. The ground fleet builder is the sole authority when several '
+                        'vehicles share one domain.'),
         DeclareLaunchArgument('fiducial_lla', default_value='',
                               description='Known fiducial LLA as lat,lon,alt.'),
         OpaqueFunction(function=frame_tree),
