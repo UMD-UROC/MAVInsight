@@ -185,11 +185,13 @@ class SceneGround:
     """
 
     def __init__(self, node, reference_frame: str, local_fix_topic: str,
-                 geoid_height_m: float, surface_file: str = "") -> None:
+                 geoid_height_m: float, surface_file: str = "",
+                 apply_survey_correction: bool = True) -> None:
         """Watch the fix and the survey that place `reference_frame`."""
         self.node = node
         self.reference_frame = reference_frame
         self.geoid_height = float(geoid_height_m)
+        self.apply_survey_correction = bool(apply_survey_correction)
         try:
             self.surface = TerrainSurface.load(surface_file)
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -230,9 +232,10 @@ class SceneGround:
                 f"Placed against the wrong home it would lie metres off the "
                 f"ground it belongs to.", throttle_duration_sec=10.0)
             return None
+        correction = (self.survey.correction()
+                      if self.apply_survey_correction else np.zeros(3))
         return grounded_scene_offset(
-            self.local_fix, self.anchor(origin_lla), self.survey.correction(),
-            self.surface)
+            self.local_fix, self.anchor(origin_lla), correction, self.surface)
 
     def moved(self, offset: Optional[np.ndarray]) -> bool:
         """Whether the scene has to be drawn again to stand at this offset."""

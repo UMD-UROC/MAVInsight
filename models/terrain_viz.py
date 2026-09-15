@@ -57,6 +57,8 @@ what the map is drawn on and never whether it is drawn.
 Subscribes
     <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
                             <reference_frame>
+    <apply_survey_correction> bool; apply the surveyed home-frame correction
+                              when the fix is already in the reference frame
     <mosaic_overlay_topic>  cdcl_umd_msgs/MosaicOverlay, the vehicle's map so
                             far. Empty disables it.
 Publishes
@@ -155,6 +157,7 @@ class TerrainViz(GraphMember):
         self.texture_px = int(param(self, "terrain_texture_px", 2048))
         self.alpha = float(param(self, "terrain_alpha", 1.0))
         self.geoid_height = float(param(self, "geoid_height_m", 0.0))
+        self.apply_survey_correction = bool(param(self, "apply_survey_correction", True))
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
         local_fix_topic = param(self, "local_fix_topic", "home_position/fix")
         viz_topic = param(self, "terrain_viz_topic", "/viz/scene/terrain")
@@ -195,7 +198,8 @@ class TerrainViz(GraphMember):
                 "built scene does not.")
             self.scene_pub.publish(SceneUpdate(deletions=[], entities=[]))
         self.ground = SceneGround(self, self.REFERENCE_FRAME, local_fix_topic,
-                                  self.geoid_height, surface)
+                                  self.geoid_height, surface,
+                                  self.apply_survey_correction)
         self.create_timer(RELOAD_CHECK_S, self.publish_when_changed)
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Terrain visualization initialized!")
