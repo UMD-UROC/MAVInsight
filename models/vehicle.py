@@ -22,7 +22,9 @@ from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
 from models.frame_member import FrameMember
 from models.gimbal_frame import (FLAGS_NEUTRAL, FLAGS_PITCH_LOCK,
                                  FLAGS_RETRACT, FLAGS_ROLL_LOCK,
-                                 FLAGS_YAW_LOCK, gimbal_reference_from_body,
+                                 FLAGS_YAW_IN_EARTH_FRAME,
+                                 FLAGS_YAW_IN_VEHICLE_FRAME, FLAGS_YAW_LOCK,
+                                 gimbal_reference_from_body,
                                  yaw_is_earth_referenced)
 from models.platforms import Platforms
 from models.qos_profiles import latched_reliable_qos, reliable_qos, viz_qos
@@ -167,6 +169,14 @@ class Vehicle(FrameMember):
         self.BENCH_BASE_ALTITUDE = float(
             self.get_parameter("bench_base_altitude").value
             if self.has_parameter("bench_base_altitude") else float("nan"))
+
+        # A two-axis mount cannot acquire an earth-fixed yaw, even if PX4
+        # briefly reports the preceding mission-ROI lock during handoff.
+        # Keep this capability beside the vehicle model so TF consumers do not
+        # each infer it from asynchronous gimbal status.
+        self.GIMBAL_HAS_YAW_AXIS = bool(
+            self.get_parameter("gimbal.has_yaw_axis").value
+            if self.has_parameter("gimbal.has_yaw_axis") else True)
 
         # Message Schema
         if self.has_parameter("message_schema"):
@@ -487,9 +497,14 @@ class Vehicle(FrameMember):
         # construct the gimbal reference frame based on the active flags
         q = tf_out.rotation
         R_world_body = R.from_quat([q.x, q.y, q.z, q.w])
+        gimbal_flags = self.gimbal_flags
+        if not self.GIMBAL_HAS_YAW_AXIS:
+            gimbal_flags = (gimbal_flags & ~(
+                FLAGS_YAW_LOCK | FLAGS_YAW_IN_EARTH_FRAME))
+            gimbal_flags |= FLAGS_YAW_IN_VEHICLE_FRAME
         R_body_ref = gimbal_reference_from_body(
             R_world_body,
-            self.gimbal_flags,
+            gimbal_flags,
             self.gimbal_reference_apply_stabilization_correction,
             self.gimbal_reference_yaw_is_earth,
             self.gimbal_reference_rotation)

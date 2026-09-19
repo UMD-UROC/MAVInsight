@@ -81,6 +81,9 @@ def frame_tree(context, *args, **kwargs):
             config['sensors'] = config.pop('models')[model]
         if 'gimbal_reference_by_model' in config:
             config.update(config.pop('gimbal_reference_by_model')[model])
+        if 'gimbal_has_yaw_axis_by_model' in config:
+            config['gimbal.has_yaw_axis'] = config.pop(
+                'gimbal_has_yaw_axis_by_model')[model]
         if bench and file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
             config['bench_base_altitude'] = 20.0
         if file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
