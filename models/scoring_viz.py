@@ -65,6 +65,7 @@ from cdcl_umd_msgs.msg import TargetBoxArray
 from geometry_msgs.msg import Point, Vector3
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import ColorRGBA, Header
+from builtin_interfaces.msg import Time
 from vision_msgs.msg import Detection3DArray
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -398,6 +399,7 @@ class ScoringViz(GraphMember):
         # Map panel needs longitude and latitude, and the compute node already
         # publishes this fix for every other view of the same frame.
         self.local_fix = None
+        self.local_fixes = []
         # Frame coordinates go out to the Map panel as WGS84, so the survey
         # goes back on: the same correction umd_uas/footprint.py applies.
         self.survey = FrameSurvey(self, param(self, "localization_frame", "map"))
@@ -449,7 +451,8 @@ class ScoringViz(GraphMember):
         the Map pins go out here, because each is a statement about this
         message and nothing else says when it changed.
         """
-        transform = self.fiducial_transform(msg.header.frame_id)
+        transform = self.fiducial_transform(
+            msg.header.frame_id, RclpyTime.from_msg(msg.header.stamp))
         if transform is None:
             # A local marker would look plausible but would follow that
             # vehicle's home frame, disagreeing with the common scene.
@@ -477,8 +480,17 @@ class ScoringViz(GraphMember):
 
     def local_fix_cb(self, msg: NavSatFix) -> None:
         self.local_fix = msg
+        self.local_fixes.append(msg)
+        self.local_fixes = self.local_fixes[-32:]
 
-    def fiducial_transform(self, source_frame):
+    def fix_at(self, stamp):
+        wanted = RclpyTime.from_msg(stamp).nanoseconds
+        fixes = [fix for fix in self.local_fixes
+                 if RclpyTime.from_msg(fix.header.stamp).nanoseconds <= wanted]
+        return max(fixes, key=lambda fix: RclpyTime.from_msg(
+            fix.header.stamp).nanoseconds) if fixes else None
+
+    def fiducial_transform(self, source_frame, when):
         """Return the source-frame pose in the known fiducial frame.
 
         Targets are authored by scoring in its local origin.  A map feature
@@ -490,7 +502,8 @@ class ScoringViz(GraphMember):
             return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
         try:
             t = self.survey.tf_buffer.lookup_transform(
-                "fiducial", source_frame, RclpyTime(),
+                "fiducial", source_frame,
+                when,
                 timeout=Duration(seconds=TF_TIMEOUT_S)).transform
         except Exception as error:
             self.get_logger().warn(
@@ -523,13 +536,10 @@ class ScoringViz(GraphMember):
         catches a scorer that stopped: the verdicts take the boxes off the
         picture, and nothing else would.
         """
-        stamp = self.get_clock().now().to_msg()
         for markers, publisher in ((self.verdict_markers, self.verdict_pub),
                                    (self.target_markers, self.target_pub)):
             if markers is None:
                 continue
-            for marker in markers.markers:
-                marker.header.stamp = stamp
             publisher.publish(markers)
         if (self.boxes_drawn
                 and self.now_sec() - self.verdict_sec > SCORER_SILENCE_S):
@@ -606,12 +616,14 @@ class ScoringViz(GraphMember):
         """
         if not self.geojson_pub:
             return
+        self.local_fix = self.fix_at(msg.header.stamp)
         if self.local_fix is None:
             self.get_logger().warn(
                 "no local fix yet, so the Map panel gets no verdicts",
                 throttle_duration_sec=10.0)
             return
-        transform = self.fiducial_transform(msg.header.frame_id)
+        transform = self.fiducial_transform(
+            msg.header.frame_id, RclpyTime.from_msg(msg.header.stamp))
         if transform is None:
             return
         features = {kind: [] for kind in self.geojson_pub}
@@ -641,8 +653,11 @@ class ScoringViz(GraphMember):
         hundred milliseconds and recoloring them costs under one, so only the
         colors follow the status.
         """
+        self.local_fix = self.fix_at(msg.header.stamp)
         transform = (None if self.local_fix is None else
-                     self.fiducial_transform(msg.header.frame_id))
+                     self.fiducial_transform(
+                         msg.header.frame_id,
+                         RclpyTime.from_msg(msg.header.stamp)))
         if transform is None:
             return
         placed = (
