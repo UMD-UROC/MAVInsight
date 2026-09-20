@@ -234,6 +234,9 @@ class Gimbal(Sensor):
         else:
             self.default_parameter_warning("orientation_topic")
             self.ORIENTATION_TOPIC = "gimbal_orientation" # TODO: Decide on sensible defaults for the position and orientation topic names
+        self.IGNORE_REPORTED_YAW = bool(
+            self.get_parameter("ignore_reported_yaw").value
+            if self.has_parameter("ignore_reported_yaw") else False)
 
         # body orientation topic TODO: Rename. Gimbal may not always be mounted to body...
         if self.has_parameter("body_orientation_topic"):
@@ -280,6 +283,9 @@ class Gimbal(Sensor):
         # construct gimbal attitude frame
         R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
         R_ref_g = frd_2_flu(R_ref_g_FRD)
+        if self.IGNORE_REPORTED_YAW:
+            roll, pitch, _ = R_ref_g.as_euler("xyz")
+            R_ref_g = R.from_euler("xyz", [roll, pitch, 0.0])
         (g_x, g_y, g_z, g_w) = R_ref_g.as_quat() # type: ignore
         q_ref_g_FLU = Quaternion(x=g_x, y=g_y, z=g_z, w=g_w)
 

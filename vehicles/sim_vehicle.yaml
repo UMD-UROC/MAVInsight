@@ -46,11 +46,9 @@ gimbal_ref_frame: d${N}_gimbal_frame_ref
 gimbal_reference_by_model:
   v2:
     gimbal_reference_apply_stabilization_correction: true
-    gimbal_reference_yaw_frame: reported
     gimbal_reference_rotation_deg: [0.0, 0.0, 0.0]
   v3:
     gimbal_reference_apply_stabilization_correction: true
-    gimbal_reference_yaw_frame: earth
     gimbal_reference_rotation_deg: [0.0, 0.0, 0.0]
 
 namespace: /uas${N}/

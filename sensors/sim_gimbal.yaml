@@ -22,6 +22,7 @@ parent_frame: d${N}_base_link
 offset: [0.131, 0.0, -0.159, 0.0, 0.0, 0.0]
 
 orientation_topic: /uas${N}/gimbal_control/device/attitude_status
+ignore_reported_yaw: true
 
 sensors:
   - sim_gimbal_rangefinder.yaml
