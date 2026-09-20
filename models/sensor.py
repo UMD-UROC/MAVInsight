@@ -284,8 +284,12 @@ class Gimbal(Sensor):
         R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
         R_ref_g = frd_2_flu(R_ref_g_FRD)
         if self.IGNORE_REPORTED_YAW:
-            roll, pitch, _ = R_ref_g.as_euler("xyz")
-            R_ref_g = R.from_euler("xyz", [roll, pitch, 0.0])
+            q = R_ref_g.as_quat()
+            pitch = np.arctan2(
+                2.0 * (q[3] * q[1] - q[2] * q[0]),
+                1.0 - 2.0 * (q[0] * q[0] + q[1] * q[1]))
+            R_ref_g = R.from_quat(
+                [0.0, np.sin(pitch / 2.0), 0.0, np.cos(pitch / 2.0)])
         (g_x, g_y, g_z, g_w) = R_ref_g.as_quat() # type: ignore
         q_ref_g_FLU = Quaternion(x=g_x, y=g_y, z=g_z, w=g_w)
 
