@@ -202,7 +202,9 @@ class Vehicle(FrameMember):
 
         # Initialize publishers
         self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
-        self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, reliable_qos)
+        # Home is state, not high-rate telemetry.  Keep the latest value for
+        # late-joining ground consumers (fleet_tf in particular).
+        self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, latched_reliable_qos)
         self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
         self.velocity_vector_pub = self.create_publisher(Marker, f"{namespace}velocityVector", reliable_qos)
 
