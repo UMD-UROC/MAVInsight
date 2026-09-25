@@ -377,7 +377,9 @@ class BuildingsViz(GraphMember):
         # roof takes the piece of the map it stands on.
         texture = param(self, "terrain_texture_file", "")
         self.texture_path = Path(texture) if texture else None
-        self.texture_px = int(param(self, "terrain_texture_px", 2048))
+        # Match terrain_viz so the ground and building surfaces retain the
+        # same 4x-linear mosaic detail.
+        self.texture_px = int(param(self, "terrain_texture_px", 8192))
         surface = param(self, "terrain_surface_file", "")
         self.side_m = scene_side(surface)
         if self.side_m is None:

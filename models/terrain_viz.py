@@ -150,9 +150,9 @@ class TerrainViz(GraphMember):
         # for every triangle corner, so a stride of two costs a quarter of it.
         self.stride = max(1, int(param(self, "terrain_stride", 1)))
         # The satellite image, at most this wide. The scene is 600 m across, so
-        # 2048 is under a third of a metre a pixel and the model stays small
-        # enough to sit in one message.
-        self.texture_px = int(param(self, "terrain_texture_px", 2048))
+        # 8192 preserves the 4x-linear mosaic detail; callers can lower it for
+        # constrained links or GPUs with an explicit parameter.
+        self.texture_px = int(param(self, "terrain_texture_px", 8192))
         self.alpha = float(param(self, "terrain_alpha", 1.0))
         self.geoid_height = float(param(self, "geoid_height_m", 0.0))
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
