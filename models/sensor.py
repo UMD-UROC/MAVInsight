@@ -22,6 +22,7 @@ from tf2_ros import Buffer, TransformListener
 # MAVInsight imports
 from models.frame_member import FrameMember
 from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu_enu, rot_2_quat
+from models.gimbal_frame import without_reported_yaw
 from models.qos_profiles import viz_qos
 from models.sensor_types import SensorTypes
 
@@ -284,12 +285,7 @@ class Gimbal(Sensor):
         R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
         R_ref_g = frd_2_flu(R_ref_g_FRD)
         if self.IGNORE_REPORTED_YAW:
-            q = R_ref_g.as_quat()
-            pitch = np.arctan2(
-                2.0 * (q[3] * q[1] - q[2] * q[0]),
-                1.0 - 2.0 * (q[0] * q[0] + q[1] * q[1]))
-            R_ref_g = R.from_quat(
-                [0.0, np.sin(pitch / 2.0), 0.0, np.cos(pitch / 2.0)])
+            R_ref_g = without_reported_yaw(R_ref_g)
         (g_x, g_y, g_z, g_w) = R_ref_g.as_quat() # type: ignore
         q_ref_g_FLU = Quaternion(x=g_x, y=g_y, z=g_z, w=g_w)
 

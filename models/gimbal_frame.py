@@ -36,6 +36,22 @@ def leveled_vehicle_heading(body_orientation: R) -> R:
     return R.from_euler("Z", heading)
 
 
+def without_reported_yaw(attitude: R) -> R:
+    """Return a v2 gimbal's pitch-only attitude in its body reference frame.
+
+    Chimera v2 has a roll axis, but flight control deliberately commands that
+    axis level (``ROLL_ANGLE == 0``). Its MAVLink attitude report nevertheless
+    carries a yaw component even though the mount has no yaw actuator. The
+    report cannot recover a separate roll angle at the pitch poles, so retain
+    the commanded pitch and remove the non-physical yaw entirely.
+    """
+    q = attitude.as_quat()
+    pitch = np.arctan2(
+        2.0 * (q[3] * q[1] - q[2] * q[0]),
+        1.0 - 2.0 * (q[0] * q[0] + q[1] * q[1]))
+    return R.from_quat([0.0, np.sin(pitch / 2.0), 0.0, np.cos(pitch / 2.0)])
+
+
 def gimbal_reference_from_body(
         body_orientation: R,
         flags: int,

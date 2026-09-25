@@ -69,6 +69,7 @@ def frame_tree(context, *args, **kwargs):
     nodes = []
     built = set()
     pending = [SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG]
+    gimbal_has_yaw_axis = None
 
     while pending:
         file_name = pending.pop(0)
@@ -82,8 +83,17 @@ def frame_tree(context, *args, **kwargs):
         if 'gimbal_reference_by_model' in config:
             config.update(config.pop('gimbal_reference_by_model')[model])
         if 'gimbal_has_yaw_axis_by_model' in config:
-            config['gimbal.has_yaw_axis'] = config.pop(
-                'gimbal_has_yaw_axis_by_model')[model]
+            # The vehicle declaration is the sole model-capability source for
+            # both halves of the gimbal TF chain.
+            gimbal_has_yaw_axis = bool(config.pop(
+                'gimbal_has_yaw_axis_by_model')[model])
+            config['gimbal.has_yaw_axis'] = gimbal_has_yaw_axis
+        if config.get('sensor_type') == 'gimbal':
+            if gimbal_has_yaw_axis is None:
+                raise RuntimeError('gimbal sensor was loaded before its vehicle capability')
+            # V2 is pitch/roll-only, so its reported yaw is non-physical. V3
+            # retains the existing full reported-attitude path.
+            config['ignore_reported_yaw'] = not gimbal_has_yaw_axis
         if bench and file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
             config['bench_base_altitude'] = 20.0
         if file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):

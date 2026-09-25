@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation as R
 from models.gimbal_frame import (FLAGS_PITCH_LOCK, FLAGS_ROLL_LOCK,
                                  FLAGS_YAW_IN_EARTH_FRAME,
                                  FLAGS_YAW_IN_VEHICLE_FRAME, FLAGS_YAW_LOCK,
-                                 gimbal_reference_from_body,
+                                 gimbal_reference_from_body, without_reported_yaw,
                                  yaw_is_earth_referenced)
 
 
@@ -58,6 +58,14 @@ class TestGimbalFrame(unittest.TestCase):
         self.assertTrue(np.allclose(
             (body * reference).as_matrix(),
             R.from_euler("z", 90.0, degrees=True).as_matrix()))
+
+    def test_v2_projection_removes_reported_yaw(self):
+        """A yawless mount retains its pitch when telemetry adds yaw."""
+        reported = R.from_euler("xyz", [0.0, -42.0, 73.0], degrees=True)
+        projected = without_reported_yaw(reported).as_euler("xyz", degrees=True)
+        self.assertAlmostEqual(projected[0], 0.0)
+        self.assertAlmostEqual(projected[1], -42.0)
+        self.assertAlmostEqual(projected[2], 0.0)
 
 
 if __name__ == "__main__":
