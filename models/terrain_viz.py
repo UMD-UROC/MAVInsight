@@ -152,6 +152,9 @@ class TerrainViz(GraphMember):
         # The satellite image, at most this wide. The scene is 600 m across, so
         # 8192 preserves the 4x-linear mosaic detail; callers can lower it for
         # constrained links or GPUs with an explicit parameter.
+        # REVIEW FLAG (0dcac17): 8192px is part of the 4x-linear-detail
+        # change (~16x pixel workload); reduce if bandwidth, compute, or RAM
+        # is tight.
         self.texture_px = int(param(self, "terrain_texture_px", 8192))
         self.alpha = float(param(self, "terrain_alpha", 1.0))
         self.geoid_height = float(param(self, "geoid_height_m", 0.0))

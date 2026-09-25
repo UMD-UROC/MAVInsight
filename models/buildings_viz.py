@@ -379,6 +379,9 @@ class BuildingsViz(GraphMember):
         self.texture_path = Path(texture) if texture else None
         # Match terrain_viz so the ground and building surfaces retain the
         # same 4x-linear mosaic detail.
+        # REVIEW FLAG (0dcac17): 8192px is part of the 4x-linear-detail
+        # change (~16x pixel workload); reduce if bandwidth, compute, or RAM
+        # is tight.
         self.texture_px = int(param(self, "terrain_texture_px", 8192))
         surface = param(self, "terrain_surface_file", "")
         self.side_m = scene_side(surface)
