@@ -20,7 +20,7 @@ gimbal_has_yaw_axis_by_model:
 # grow the Path message while standing still.
 position_tolerance: 0.0762 # (3 inches)
 
-frame_name: d${N}_base_link
+frame_name: uas${N}_base_link
 parent_frame: uas${N}_ekf_origin
 pose_frame: enu_flu
 ekf_origin_frame: uas${N}_ekf_origin
@@ -36,8 +36,8 @@ fiducial_frame: fiducial
 # publishes that reference frame, because the body pose updates far more often
 # than the gimbal pose does. The code derives both names from the gimbal's own
 # frame_name, and nothing checks that these two agree with it.
-gimbal_offset_frame: d${N}_gimbal_frame_offset
-gimbal_ref_frame: d${N}_gimbal_frame_ref
+gimbal_offset_frame: uas${N}_gimbal_frame_offset
+gimbal_ref_frame: uas${N}_gimbal_frame_ref
 
 # Attitude reference conventions are an airframe property. V3 reports attitude
 # in the earth frame even while its MAVLink flags say vehicle frame, so use the

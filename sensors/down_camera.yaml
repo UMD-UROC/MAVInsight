@@ -5,8 +5,8 @@ display_name: Down Facing Camera (D${N})
 executable: camera
 sensor_type: camera
 
-frame_name: d${N}_pilot
-parent_frame: d${N}_base_link
+frame_name: uas${N}_pilot
+parent_frame: uas${N}_base_link
 # Pitch of 90 degrees turns the camera x axis from forward to down.
 offset: [0.10, 0.0, -0.06, 0.0, 90.0, 0.0]
 

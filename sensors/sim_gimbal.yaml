@@ -15,10 +15,10 @@ executable: gimbal
 sensor_type: gimbal
 msg_schema: mavros
 
-frame_name: d${N}_gimbal_frame
-parent_frame: d${N}_base_link
+frame_name: uas${N}_gimbal_frame
+parent_frame: uas${N}_base_link
 # x y z roll pitch yaw. The rotation goes through euler_2_quat, which reads
-# DEGREES. It builds the static frame d${N}_gimbal_frame_offset.
+# DEGREES. It builds the static frame uas${N}_gimbal_frame_offset.
 offset: [0.131, 0.0, -0.159, 0.0, 0.0, 0.0]
 
 orientation_topic: /uas${N}/gimbal_control/device/attitude_status
