@@ -14,7 +14,7 @@ from mavros_msgs.msg import Altitude, HomePosition, GimbalDeviceAttitudeStatus
 from nav_msgs.msg import Path
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
 from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
@@ -27,6 +27,43 @@ from models.gimbal_frame import (FLAGS_NEUTRAL, FLAGS_PITCH_LOCK,
                                  yaw_is_earth_referenced)
 from models.platforms import Platforms
 from models.qos_profiles import latched_reliable_qos, reliable_qos, viz_qos
+
+
+class FlightPathChunks:
+    def __init__(self, frame_id: str, chunk_size: int):
+        self.frame_id = frame_id
+        self.chunk_size = chunk_size
+        self.chunks: list[list[PoseStamped]] = []
+        self.published = 0
+
+    def add(self, pose: PoseStamped):
+        if not self.chunks or len(self.chunks[-1]) >= self.chunk_size:
+            self.chunks.append([])
+        self.chunks[-1].append(pose)
+
+    def message(self) -> MarkerArray:
+        output = MarkerArray()
+        last = len(self.chunks) - 1
+        first = self.published
+        for index in range(first, len(self.chunks)):
+            chunk = self.chunks[index]
+            if index == last or index >= self.published:
+                marker = Marker()
+                marker.header.frame_id = self.frame_id
+                marker.header.stamp = chunk[-1].header.stamp
+                marker.ns = "flight_path"
+                marker.id = index
+                marker.type = Marker.LINE_STRIP
+                marker.action = Marker.ADD
+                marker.scale.x = 0.15
+                marker.color.a = 1.0
+                marker.color.g = 1.0
+                marker.color.b = 1.0
+                marker.points = [Point(x=p.pose.position.x, y=p.pose.position.y,
+                                       z=p.pose.position.z) for p in chunk]
+                output.markers.append(marker)
+        self.published = max(self.published, last)
+        return output
 
 
 class Vehicle(FrameMember):
@@ -67,6 +104,8 @@ class Vehicle(FrameMember):
         else:
             self.default_parameter_warning("refresh_rate")
             self.REFRESH_RATE = 60.0  # Hz
+        self.PATH_CHUNK_SIZE = int(self.get_parameter("path_chunk_size").value) if self.has_parameter("path_chunk_size") else 256
+        self.PATH_PUBLISH_RATE = float(self.get_parameter("path_publish_rate").value) if self.has_parameter("path_publish_rate") else 1.0
 
         # Namespace
         if self.has_parameter("namespace"):
@@ -197,7 +236,7 @@ class Vehicle(FrameMember):
         self.VELOCITY = None
 
         # Initialize publishers
-        self.path_pub = self.create_publisher(Path, f"{namespace}flightPath", reliable_qos)
+        self.path_pub = self.create_publisher(MarkerArray, f"{namespace}flightPathChunks", reliable_qos)
         # Home is state, not high-rate telemetry.  Keep the latest value for
         # late-joining ground consumers (fleet_tf in particular).
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, latched_reliable_qos)
@@ -205,8 +244,7 @@ class Vehicle(FrameMember):
         self.velocity_vector_pub = self.create_publisher(Marker, f"{namespace}velocityVector", reliable_qos)
 
         # Internal storage for path visualizer
-        self.path = Path()
-        self.path.header.frame_id = self.PARENT_FRAME
+        self.path = FlightPathChunks(self.PARENT_FRAME, self.PATH_CHUNK_SIZE)
         self.latest_pose = None
 
         # Initialize state variables for velocity and position tracking
@@ -284,7 +322,7 @@ class Vehicle(FrameMember):
         self.gimbal_flags = 0
 
         # Publisher timers
-        self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
+        self.create_timer(1.0 / self.PATH_PUBLISH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
         # Split global GPS placement from the survey correction so both are
@@ -430,8 +468,6 @@ class Vehicle(FrameMember):
             self.drone_pos = list(new_pos)
 
         path_update.header = head_out
-        self.path.header.stamp = path_update.header.stamp
-
         # keep the most recent header for downstream publishers
         self.latest_header = head_out
 
@@ -453,7 +489,7 @@ class Vehicle(FrameMember):
         if self.last_drone_pos is None or not self._positions_equal(
             self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
         ):
-            self.path.poses.append(path_update)  # type: ignore
+            self.path.add(path_update)
             self.last_drone_pos = new_pos
 
         # publish the reference frame for a gimbal
@@ -587,8 +623,9 @@ class Vehicle(FrameMember):
         self.correction_t.header.stamp = stamp
 
     def publish_path(self):
-        if self.path.poses:
-            self.path_pub.publish(self.path)
+        message = self.path.message()
+        if message.markers:
+            self.path_pub.publish(message)
 
     def publish_velocity_vector(self):
         # Don't publish until we've received at least one position update
