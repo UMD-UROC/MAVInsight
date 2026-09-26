@@ -7,7 +7,6 @@ from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 import mavros_msgs.msg
-import px4_msgs.msg
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
@@ -247,15 +246,10 @@ class Gimbal(Sensor):
             self.BODY_TOPIC = "body_topic"
 
         # initialize subscribers
-        match self.msg_schema:
-            case "px4_msgs":
-                attitude_msg_type = px4_msgs.msg.GimbalDeviceAttitudeStatus
-                body_msg_type = px4_msgs.msg.VehicleOdometry
-            case "mavros":
-                attitude_msg_type = mavros_msgs.msg.GimbalDeviceAttitudeStatus
-                body_msg_type = Odometry
-            case _:
-                raise ValueError(f"Cannot initialize {self.DISPLAY_NAME} Gimbal viz with message schema: {self.msg_schema}.")
+        if self.msg_schema != "mavros":
+            raise ValueError(f"Cannot initialize {self.DISPLAY_NAME} Gimbal viz with message schema: {self.msg_schema}.")
+        attitude_msg_type = mavros_msgs.msg.GimbalDeviceAttitudeStatus
+        body_msg_type = Odometry
         self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
 
         # TF listeners

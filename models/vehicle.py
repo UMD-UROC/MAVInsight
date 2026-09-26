@@ -12,7 +12,6 @@ from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, TransformStamped, TwistStamped, Vector3
 from mavros_msgs.msg import Altitude, HomePosition, GimbalDeviceAttitudeStatus
 from nav_msgs.msg import Path
-from px4_msgs.msg import VehicleOdometry  # type:ignore
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
@@ -181,10 +180,7 @@ class Vehicle(FrameMember):
         # Message Schema
         if self.has_parameter("message_schema"):
             msg_schema_str = self.get_parameter("message_schema").get_parameter_value().string_value
-            if msg_schema_str.lower() == "px4_msgs":
-                self.LOCATION_MSG_TYPE = VehicleOdometry
-            else:
-                self.LOCATION_MSG_TYPE = PoseStamped
+            self.LOCATION_MSG_TYPE = PoseStamped
         else:
             self.default_parameter_warning("message_schema")
             self.LOCATION_MSG_TYPE = PoseStamped
@@ -403,64 +399,29 @@ class Vehicle(FrameMember):
     def update_velocity(self, msg: TwistStamped):
         self.VELOCITY=msg
 
-    def publish_position(self, msg: PoseStamped | VehicleOdometry):
+    def publish_position(self, msg: PoseStamped):
         # header
         # TODO: double check time sync between message schemas
         head_out = Header(frame_id=self.PARENT_FRAME)
 
         path_update = PoseStamped()
 
-        # transform
-        if self.LOCATION_MSG_TYPE == VehicleOdometry:
-            assert isinstance(msg, VehicleOdometry)
-            # msg.timestamp_sample is the true sample instant and is what this
-            # header wants, but it counts microseconds since the flight
-            # controller booted. Nothing here holds the offset from that clock
-            # to the ROS clock, and an unstamped header is worse than a late
-            # one: tf2 keeps one sample at the epoch, rejects every later one,
-            # and the whole tree goes dead with no error. Stamp at receive, the
-            # same instant mavros stamps at, until a time sync gives the offset.
-            head_out.stamp = self.get_clock().now().to_msg()
-            pos_in = msg.position
+        head_out.stamp = msg.header.stamp
+        pos_in = msg.pose.position
+        pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
+        tf_out = Transform(translation=pos_out, rotation=msg.pose.orientation)
 
-            pos_out = self.position_conversion(x_in=float(pos_in[0]), y_in=float(pos_in[1]), z_in=float(pos_in[2]))
-            q_out_frd = Quaternion(x=float(msg.q[1]), y=float(msg.q[2]), z=float(msg.q[3]), w=float(msg.q[0]))
+        path_update.pose.position.x = float(pos_in.x)
+        path_update.pose.position.y = float(pos_in.y)
+        path_update.pose.position.z = float(pos_in.z)
+        path_update.pose.orientation = msg.pose.orientation
 
-            q_out_flu = frd_ned_2_flu_enu(q_out_frd)
-            tf_out = Transform(translation=pos_out, rotation=q_out_flu)
+        if self.VELOCITY:
+            vel_in = self.VELOCITY.twist.linear
+            self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
 
-            path_update.pose.position.x = pos_out.x
-            path_update.pose.position.y = pos_out.y
-            path_update.pose.position.z = pos_out.z
-            path_update.pose.orientation = q_out_flu
-
-            # TODO: Migrate to new function
-            vel_in = msg.velocity
-            vel_out = self.position_conversion(x_in=float(vel_in[0]), y_in=float(vel_in[1]), z_in=float(vel_in[2]))
-            self.drone_velocity = [vel_out.x, vel_out.y, vel_out.z]
-
-            new_pos = (float(pos_out.x), float(pos_out.y), float(pos_out.z))
-            self.drone_pos = list(new_pos)
-
-        else:
-            assert isinstance(msg, PoseStamped)
-            head_out.stamp = msg.header.stamp
-            pos_in = msg.pose.position
-            pos_out = Vector3(x=pos_in.x, y=pos_in.y, z=pos_in.z)
-            tf_out = Transform(translation=pos_out, rotation=msg.pose.orientation)
-
-            path_update.pose.position.x = float(pos_in.x)
-            path_update.pose.position.y = float(pos_in.y)
-            path_update.pose.position.z = float(pos_in.z)
-            path_update.pose.orientation = msg.pose.orientation
-
-            # Extract velocity from Odometry message
-            if self.VELOCITY:
-                vel_in = self.VELOCITY.twist.linear
-                self.drone_velocity = [float(vel_in.x), float(vel_in.y), float(vel_in.z)]
-
-            new_pos = (float(pos_in.x), float(pos_in.y), float(pos_in.z))
-            self.drone_pos = list(new_pos)
+        new_pos = (float(pos_in.x), float(pos_in.y), float(pos_in.z))
+        self.drone_pos = list(new_pos)
 
         if np.isfinite(self.BENCH_BASE_ALTITUDE):
             tf_out.translation.z = self.BENCH_BASE_ALTITUDE
