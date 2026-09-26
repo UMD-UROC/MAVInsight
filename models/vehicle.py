@@ -67,6 +67,12 @@ class Vehicle(FrameMember):
         else:
             self.default_parameter_warning("refresh_rate")
             self.REFRESH_RATE = 60.0  # Hz
+        self.PATH_PUBLISH_RATE = float(
+            self.get_parameter("path_publish_rate").value
+            if self.has_parameter("path_publish_rate") else 1.0)
+        self.PATH_UPDATE_RATE = float(
+            self.get_parameter("path_update_rate").value
+            if self.has_parameter("path_update_rate") else 1.0)
 
         # Namespace
         if self.has_parameter("namespace"):
@@ -213,6 +219,7 @@ class Vehicle(FrameMember):
         self.drone_velocity = [0.0, 0.0, 0.0]  # Current velocity (m/s)
         self.drone_pos = [0.0, 0.0, 0.0]  # Current position (m)
         self.last_drone_pos: Optional[Tuple[float, float, float]] = None  # Last position kept on the path
+        self.last_path_update_time = None
         self.target_velocity = [0.0, 0.0, 0.0]  # Target velocity (m/s)
         self.target_pos = [0.0, 0.0, 0.0]  # Target position (m)
 
@@ -284,7 +291,7 @@ class Vehicle(FrameMember):
         self.gimbal_flags = 0
 
         # Publisher timers
-        self.create_timer(1.0 / self.REFRESH_RATE, self.publish_path)
+        self.create_timer(1.0 / self.PATH_PUBLISH_RATE, self.publish_path)
         self.create_timer(1.0 / self.REFRESH_RATE, self.publish_velocity_vector)
 
         # Split global GPS placement from the survey correction so both are
@@ -450,11 +457,16 @@ class Vehicle(FrameMember):
 
         # build PoseStamped for path
         # Path update
-        if self.last_drone_pos is None or not self._positions_equal(
+        stamp_ns = (path_update.header.stamp.sec * 1_000_000_000
+                    + path_update.header.stamp.nanosec)
+        due = (self.last_path_update_time is None
+               or stamp_ns - self.last_path_update_time >= 1_000_000_000 / self.PATH_UPDATE_RATE)
+        if due and (self.last_drone_pos is None or not self._positions_equal(
             self.last_drone_pos, new_pos, self.POSITION_TOLERANCE
-        ):
+        )):
             self.path.poses.append(path_update)  # type: ignore
             self.last_drone_pos = new_pos
+            self.last_path_update_time = stamp_ns
 
         # publish the reference frame for a gimbal
         # construct the gimbal reference frame based on the active flags
