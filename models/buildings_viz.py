@@ -77,7 +77,7 @@ from geometry_msgs.msg import Quaternion, Vector3
 from models import gltf
 from models.graph_member import GraphMember
 from models.scene_ground import SceneGround
-from models.scene_texture import composite_overlay
+from models.scene_texture import composite_overlay, overlay_box_enu
 
 
 # --------------------------------------------------------------- appearance
@@ -471,9 +471,15 @@ class BuildingsViz(GraphMember):
             base = Image.new("RGB", (self.texture_px, self.texture_px),
                              tuple(int(255 * c) for c in DEFAULT_SURFACE_COLOR))
         else:
-            base = Image.open(self.texture_path).convert("RGB")
-            if max(base.size) > self.texture_px:
-                base.thumbnail((self.texture_px, self.texture_px))
+            source = Image.open(self.texture_path).convert("RGB")
+            wanted = self.image_px()
+            if max(source.size) != wanted:
+                scale = wanted / max(source.size)
+                base = source.resize((max(1, round(source.width * scale)),
+                                      max(1, round(source.height * scale))),
+                                     Image.BICUBIC)
+            else:
+                base = source
         note = ""
         if self.mosaic is not None:
             try:
@@ -492,6 +498,23 @@ class BuildingsViz(GraphMember):
         packed = io.BytesIO()
         base.save(packed, "JPEG", quality=88)
         return packed.getvalue(), base.size, note
+
+    def image_px(self):
+        """Match terrain_viz's texture resolution, including live mosaic detail.
+
+        Buildings use the same scene-wide UV space as terrain. Resolution must
+        therefore be chosen from the whole scene, rather than the smaller
+        building footprint, or the roof texture becomes visibly softer.
+        """
+        raster = (max(Image.open(self.texture_path).size)
+                  if self.texture_path and self.texture_path.is_file() else 1)
+        if self.mosaic is not None and self.scene_origin_lla is not None:
+            box = overlay_box_enu(self.mosaic, self.scene_origin_lla)
+            if box is not None and self.mosaic.width_px > 1:
+                per_px = (box[2] - box[0]) / (self.mosaic.width_px - 1)
+                if per_px > 0.0:
+                    raster = max(raster, int(round(self.side_m / per_px)))
+        return min(self.texture_px, raster)
 
     def build_model(self) -> bool:
         """Read the buildings on disk and hold them as one textured model, in
