@@ -145,7 +145,10 @@ class FrameSurvey:
         self.frame = frame
         self._parent: Optional[str] = None
         self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, node, spin_thread=True)
+        # None gives the listener a private node on its own thread. The caller's
+        # node is spun by rclpy.spin(), which would take it back onto the main
+        # executor, so a lookup that waits would block the /tf it waits for.
+        self.tf_listener = TransformListener(self.tf_buffer, None, spin_thread=True)
 
     def correction(self) -> np.ndarray:
         """The correction now, as an ENU offset. Zeros where there is none."""
