@@ -9,6 +9,7 @@ node the result, so a model is described once and instantiated per vehicle.
 See px4-sim-stack/docs/uas-contract.md section 5.
 """
 
+import math
 from pathlib import Path
 from string import Template
 
@@ -51,6 +52,10 @@ def generate_launch_description():
                         'vehicles share one domain.'),
         DeclareLaunchArgument('fiducial_lla', default_value='',
                               description='Known fiducial LLA as lat,lon,alt.'),
+        DeclareLaunchArgument(
+            'camera_mount_rotation_deg', default_value='0.0,0.0,0.0',
+            description='Gimbal RGB camera mounting Euler xyz angles in degrees '
+                        '(FLU axes), as roll,pitch,yaw. Keep CameraInfo R identity.'),
         OpaqueFunction(function=frame_tree),
     ])
 
@@ -62,6 +67,10 @@ def frame_tree(context, *args, **kwargs):
     bench = LaunchConfiguration('bench').perform(context) == 'true'
     publish_fiducial_edge = LaunchConfiguration('publish_fiducial_edge').perform(context) == 'true'
     fiducial_lla = LaunchConfiguration('fiducial_lla').perform(context)
+    camera_rotation = [float(value) for value in LaunchConfiguration(
+        'camera_mount_rotation_deg').perform(context).split(',')]
+    if len(camera_rotation) != 3 or not all(math.isfinite(value) for value in camera_rotation):
+        raise ValueError('camera_mount_rotation_deg requires three finite Euler xyz angles')
 
     resources = Path(get_package_share_directory(PACKAGE)) / 'package_resources'
     global_config = str(resources / 'global_node_config.yaml')
@@ -78,6 +87,12 @@ def frame_tree(context, *args, **kwargs):
         built.add(file_name)
 
         config = load(resources / file_name, number)
+        if file_name in ('gimbal_rgb_camera.yaml', 'sim_gimbal_rgb_camera.yaml'):
+            # The existing offset reader uses Euler xyz degrees. Preserve its
+            # translation and apply the mounting correction once, in TF; all
+            # measurement and visualization consumers then share this frame.
+            config['camera_mount_rotation_deg'] = camera_rotation
+            config['offset'] = config['offset'][:3] + camera_rotation
         if 'models' in config:
             config['sensors'] = config.pop('models')[model]
         if 'gimbal_reference_by_model' in config:
