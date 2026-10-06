@@ -5,6 +5,7 @@ from math import isclose
 from typing import Optional, Tuple
 
 import numpy as np
+from cdcl_umd_msgs.msg import FiducialCalibration
 import pymap3d as pm
 from scipy.spatial.transform import Rotation as R
 
@@ -233,6 +234,12 @@ class Vehicle(FrameMember):
             TransformStamped, fiducial_update_topic, self.update_fiducial,
             latched_reliable_qos)
         self.ALTITUDE = None
+        calibration_topic = (fiducial_update_topic.rsplit('/', 1)[0] +
+                             '/fiducial_calibration/update'
+                             if '/' in fiducial_update_topic else
+                             'fiducial_calibration/update')
+        self.create_subscription(FiducialCalibration, calibration_topic,
+                                 self.update_calibration, latched_reliable_qos)
         self.VELOCITY = None
 
         # Initialize publishers
@@ -430,6 +437,23 @@ class Vehicle(FrameMember):
             )
         else:
             self.get_logger().debug("fiducial transform re-asserted (unchanged)")
+
+    def update_calibration(self, msg: FiducialCalibration):
+        if msg.header.frame_id != self.UNCORRECTED_HOME_FRAME:
+            return
+        values = [msg.translation.x, msg.translation.y, msg.translation.z]
+        q = msg.sensor_rotation
+        quaternion = np.array([q.x, q.y, q.z, q.w])
+        if (not np.all(np.isfinite(values)) or not np.all(np.isfinite(quaternion))
+                or abs(np.linalg.norm(quaternion)-1) > 1e-3):
+            self.get_logger().error('nonfinite fiducial calibration ignored')
+            return
+        update = TransformStamped()
+        update.header = msg.header
+        update.child_frame_id = self.HOME_FRAME
+        update.transform.translation = msg.translation
+        update.transform.rotation.w = 1.0
+        self.update_fiducial(update)
 
     def update_alt(self, msg: Altitude):
         self.ALTITUDE=msg

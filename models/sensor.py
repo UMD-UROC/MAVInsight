@@ -7,6 +7,7 @@ from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
 import mavros_msgs.msg
+from cdcl_umd_msgs.msg import FiducialCalibration
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Range
@@ -22,7 +23,7 @@ from tf2_ros import Buffer, TransformListener
 from models.frame_member import FrameMember
 from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu_enu, rot_2_quat
 from models.gimbal_frame import without_reported_yaw
-from models.qos_profiles import viz_qos
+from models.qos_profiles import viz_qos, latched_reliable_qos
 from models.sensor_types import SensorTypes
 
 class Sensor(FrameMember):
@@ -251,6 +252,11 @@ class Gimbal(Sensor):
         attitude_msg_type = mavros_msgs.msg.GimbalDeviceAttitudeStatus
         body_msg_type = Odometry
         self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
+        self._calibration_rotation = R.identity()
+        topic = ('/' + self.FRAME_NAME.split('_gimbal')[0]
+                 + '/fiducial_calibration/update')
+        self.create_subscription(FiducialCalibration, topic,
+                                 self.update_calibration, latched_reliable_qos)
 
         # TF listeners
         '''
@@ -280,6 +286,11 @@ class Gimbal(Sensor):
         R_ref_g = frd_2_flu(R_ref_g_FRD)
         if self.IGNORE_REPORTED_YAW:
             R_ref_g = without_reported_yaw(R_ref_g)
+        nominal_tf = TransformStamped(
+            header=Header(stamp=msg.header.stamp, frame_id=self.GIMBAL_REF_FRAME_NAME),
+            child_frame_id=f'{self.FRAME_NAME}_nominal',
+            transform=Transform(rotation=rot_2_quat(R_ref_g)))
+        R_ref_g = R_ref_g * getattr(self, '_calibration_rotation', R.identity())
         (g_x, g_y, g_z, g_w) = R_ref_g.as_quat() # type: ignore
         q_ref_g_FLU = Quaternion(x=g_x, y=g_y, z=g_z, w=g_w)
 
@@ -289,7 +300,17 @@ class Gimbal(Sensor):
             child_frame_id = f"{self.FRAME_NAME}",
             transform = Transform(rotation=q_ref_g_FLU)
         )
-        self.tf_broadcaster.sendTransform(gimbal_tf)
+        self.tf_broadcaster.sendTransform([nominal_tf, gimbal_tf])
+
+    def update_calibration(self, msg: FiducialCalibration):
+        if msg.gimbal_frame != self.FRAME_NAME:
+            return
+        q = msg.sensor_rotation
+        values = np.array([q.x, q.y, q.z, q.w])
+        if not np.all(np.isfinite(values)) or abs(np.linalg.norm(values)-1) > 1e-3:
+            self.get_logger().error('invalid fiducial sensor rotation ignored')
+            return
+        self._calibration_rotation = R.from_quat(values)
 
     # A _commanded_attitude frame used to be published here from
     # GimbalManagerSetAttitude. That message carries no header, so every
