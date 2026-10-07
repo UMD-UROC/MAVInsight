@@ -78,7 +78,28 @@ def frame_tree(context, *args, **kwargs):
 
     resources = Path(get_package_share_directory(PACKAGE)) / 'package_resources'
     global_config = str(resources / 'global_node_config.yaml')
+    return [Node(
+        package=PACKAGE, executable=config['executable'], name=name,
+        namespace=NAMESPACE, parameters=[global_config, config], output='screen',
+    ) for name, config in frame_configs(
+        number, model, camera=camera, sim=sim, bench=bench,
+        publish_fiducial_edge=publish_fiducial_edge, fiducial_lla=fiducial_lla,
+        camera_rotation=camera_rotation)]
 
+
+def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
+                  publish_fiducial_edge=True, fiducial_lla='', camera_rotation=None):
+    """Build the same named TF-node configurations for live launch and bag replay.
+
+    Replay writes these dictionaries to parameter files with use_sim_time set
+    before starting each process. It does not maintain a second frame tree.
+    """
+    if camera not in ('rgb', 'thermal') or model not in ('v2', 'v3'):
+        raise ValueError('invalid camera or airframe model')
+    camera_rotation = [0.0, 0.0, 0.0] if camera_rotation is None else camera_rotation
+    if len(camera_rotation) != 3 or not all(math.isfinite(v) for v in camera_rotation):
+        raise ValueError('camera_mount_rotation_deg requires three finite Euler xyz angles')
+    resources = Path(get_package_share_directory(PACKAGE)) / 'package_resources'
     nodes = []
     built = set()
     pending = [SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG]
@@ -125,16 +146,8 @@ def frame_tree(context, *args, **kwargs):
             if fiducial_lla:
                 config['fiducial_lla'] = [float(value) for value in fiducial_lla.split(',')]
 
-        nodes.append(Node(
-            package=PACKAGE,
-            executable=config['executable'],
-            # The prefix keeps two vehicles apart on the one domain the ground
-            # station runs both of their trees on.
-            name=f'd{number}_{Path(file_name).stem}',
-            namespace=NAMESPACE,
-            parameters=[global_config, config],
-            output='screen',
-        ))
+        # Prefixes separate vehicles in the ground station's shared domain.
+        nodes.append((f'd{number}_{Path(file_name).stem}', config))
         pending += config.get('sensors', [])
 
     return nodes
