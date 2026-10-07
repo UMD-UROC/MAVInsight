@@ -53,8 +53,11 @@ def generate_launch_description():
         DeclareLaunchArgument('fiducial_lla', default_value='',
                               description='Known fiducial LLA as lat,lon,alt.'),
         DeclareLaunchArgument(
+            'camera', default_value='rgb', choices=['rgb', 'thermal'],
+            description='Selected gimbal camera: RGB/pilot by day or thermal by night.'),
+        DeclareLaunchArgument(
             'camera_mount_rotation_deg', default_value='0.0,0.0,0.0',
-            description='Gimbal RGB camera mounting Euler xyz angles in degrees '
+            description='Selected gimbal camera mounting Euler xyz angles in degrees '
                         '(FLU axes), as roll,pitch,yaw. Keep CameraInfo R identity.'),
         OpaqueFunction(function=frame_tree),
     ])
@@ -63,6 +66,7 @@ def generate_launch_description():
 def frame_tree(context, *args, **kwargs):
     number = int(LaunchConfiguration('uas').perform(context))
     model = LaunchConfiguration('model').perform(context)
+    camera = LaunchConfiguration('camera').perform(context)
     sim = LaunchConfiguration('sim').perform(context) == 'true'
     bench = LaunchConfiguration('bench').perform(context) == 'true'
     publish_fiducial_edge = LaunchConfiguration('publish_fiducial_edge').perform(context) == 'true'
@@ -88,6 +92,11 @@ def frame_tree(context, *args, **kwargs):
 
         config = load(resources / file_name, number)
         if file_name in ('gimbal_rgb_camera.yaml', 'sim_gimbal_rgb_camera.yaml'):
+            # The active camera retains the rgb frame names for downstream
+            # localization and Foxglove. Its intrinsics and mount must both
+            # correspond to camera:=rgb (v2 pilot) or camera:=thermal.
+            config['display_name'] = config['display_name'].replace(
+                'RGB', 'Thermal' if camera == 'thermal' else 'RGB')
             # The existing offset reader uses Euler xyz degrees. Preserve its
             # translation and apply the mounting correction once, in TF; all
             # measurement and visualization consumers then share this frame.

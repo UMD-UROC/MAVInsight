@@ -1,7 +1,8 @@
-# The camera ds_node reads: rgb${N} on a v3 airframe, pilot${N} on a v2.
+# The selected gimbal camera: rgb${N} on v3 or pilot${N} on v2 in day mode;
+# thermal${N} in night mode. The launch supplies the selected camera's mount.
 #
 # The node publishes the body frame uas${N}_rgb_offset, which is what tf_loc
-# projects through, and a uas${N}_rgb_optical leaf for a consumer that uses
+# projects through for either selection, and a uas${N}_rgb_optical leaf that uses
 # standard optical math. The two must agree, or a camera footprint will not
 # contain the detections that fall inside it.
 

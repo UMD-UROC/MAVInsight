@@ -28,3 +28,17 @@ list_property:
  - list_value2
 empyt_list_property: []
 ```
+
+## Selected gimbal camera mounting correction
+
+`launch_sim.launch.py camera:=rgb|thermal camera_mount_rotation_deg:=roll,pitch,yaw`
+uses degrees about the camera FLU axes, with Euler xyz composition. The
+`umd_uas` onboard and offboard launches forward the selected per-vehicle camera
+parameters. RGB means the v3 RGB stream or the v2 pilot stream; thermal means
+the thermal stream. Day/night switching restarts the launch with that selection.
+
+The selected camera uses the existing `uas<N>_rgb_offset` and
+`uas<N>_rgb_optical` frame names. Its CameraInfo and mounting transform must
+belong to the same camera. The mounting rotation is applied once on the static
+`gimbal_frame -> rgb_offset` edge; CameraInfo R stays identity. Measurements,
+fiducial correction, and image/3D visualization therefore share the same TF.
