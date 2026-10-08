@@ -9,8 +9,14 @@ from dataclasses import dataclass
 import json
 import math
 import uuid
+import threading
 
 import pymap3d as pm
+
+
+def reference_topic(fix_topic, events=False):
+    prefix = fix_topic.rsplit('/', 2)[0] + '/' if fix_topic.count('/') >= 2 else ''
+    return prefix + 'localization/' + ('reference_events' if events else 'reference')
 
 
 def stamp_ns(stamp):
@@ -27,26 +33,30 @@ class StateHistory:
         self.limit = limit
         self._times = []
         self._values = []
+        self._lock = threading.RLock()
 
     def add(self, time_ns, value):
-        index = bisect_right(self._times, time_ns)
-        if index and self._times[index - 1] == time_ns:
-            self._values[index - 1] = value
-        else:
-            self._times.insert(index, time_ns)
-            self._values.insert(index, value)
-        excess = len(self._times) - self.limit
-        if excess > 0:
-            del self._times[:excess]
-            del self._values[:excess]
+        with self._lock:
+            index = bisect_right(self._times, time_ns)
+            if index and self._times[index - 1] == time_ns:
+                self._values[index - 1] = value
+            else:
+                self._times.insert(index, time_ns)
+                self._values.insert(index, value)
+            excess = len(self._times) - self.limit
+            if excess > 0:
+                del self._times[:excess]
+                del self._values[:excess]
 
     def contains(self, time_ns):
-        index = bisect_right(self._times, time_ns)
-        return bool(index and self._times[index - 1] == time_ns)
+        with self._lock:
+            index = bisect_right(self._times, time_ns)
+            return bool(index and self._times[index - 1] == time_ns)
 
     def at(self, time_ns=0):
-        index = len(self._times) if not time_ns else bisect_right(self._times, time_ns)
-        return self._values[index - 1] if index else None
+        with self._lock:
+            index = len(self._times) if not time_ns else bisect_right(self._times, time_ns)
+            return self._values[index - 1] if index else None
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,11 @@ class ReferenceState:
                 raise ValueError('invalid localization reference vector')
         if not isinstance(values['stamp'], int) or values['stamp'] < 0:
             raise ValueError('invalid localization reference timestamp')
+        for key in ('generation', 'raw_frame', 'home_frame', 'ekf_frame'):
+            if not isinstance(values[key], str) or not values[key]:
+                raise ValueError('invalid localization reference identifier')
+        if not -90 <= values['anchor'][0] <= 90 or not -180 <= values['anchor'][1] <= 180:
+            raise ValueError('invalid localization reference geography')
         return cls(**values)
 
     def frame_anchor(self, frame, corrected=True):
@@ -85,6 +100,8 @@ class ReferenceState:
             raise ValueError('frame is not in this localization reference')
         if corrected and frame != self.raw_frame:
             offset = tuple(a + b for a, b in zip(offset, self.correction))
+        if not any(offset):
+            return self.anchor
         return tuple(pm.enu2geodetic(*offset, *self.anchor, deg=True))
 
 

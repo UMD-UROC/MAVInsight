@@ -8,6 +8,7 @@
   <license>Apache-2.0</license>
 
   <!-- Message interfaces the nodes publish and subscribe -->
+  <depend>builtin_interfaces</depend>
   <depend>cdcl_umd_msgs</depend>
   <depend>foxglove_msgs</depend>
   <depend>geometry_msgs</depend>

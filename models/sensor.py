@@ -20,6 +20,7 @@ from tf2_geometry_msgs import do_transform_pose
 from tf2_ros import Buffer, TransformListener
 
 # MAVInsight imports
+from mavinsight.localization_reference import StateHistory, stamp_ns
 from models.frame_member import FrameMember
 from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu_enu, rot_2_quat
 from models.gimbal_frame import without_reported_yaw
@@ -253,6 +254,8 @@ class Gimbal(Sensor):
         body_msg_type = Odometry
         self.create_subscription(attitude_msg_type, self.ORIENTATION_TOPIC, self.publish_orientation, viz_qos)
         self._calibration_rotation = R.identity()
+        self._calibration_history = StateHistory()
+        self._calibration_history.add(0, R.identity())
         topic = ('/' + self.FRAME_NAME.split('_gimbal')[0]
                  + '/fiducial_calibration/update')
         self.create_subscription(FiducialCalibration, topic,
@@ -290,7 +293,10 @@ class Gimbal(Sensor):
             header=Header(stamp=msg.header.stamp, frame_id=self.GIMBAL_REF_FRAME_NAME),
             child_frame_id=f'{self.FRAME_NAME}_nominal',
             transform=Transform(rotation=rot_2_quat(R_ref_g)))
-        R_ref_g = R_ref_g * getattr(self, '_calibration_rotation', R.identity())
+        history = getattr(self, '_calibration_history', None)
+        calibration = (history.at(stamp_ns(msg.header.stamp)) if history is not None
+                       else getattr(self, '_calibration_rotation', R.identity()))
+        R_ref_g = R_ref_g * calibration
         (g_x, g_y, g_z, g_w) = R_ref_g.as_quat() # type: ignore
         q_ref_g_FLU = Quaternion(x=g_x, y=g_y, z=g_z, w=g_w)
 
@@ -310,7 +316,11 @@ class Gimbal(Sensor):
         if not np.all(np.isfinite(values)) or abs(np.linalg.norm(values)-1) > 1e-3:
             self.get_logger().error('invalid fiducial sensor rotation ignored')
             return
-        self._calibration_rotation = R.from_quat(values)
+        if not hasattr(self, '_calibration_history'):
+            self._calibration_history = StateHistory()
+            self._calibration_history.add(0, R.identity())
+        self._calibration_history.add(stamp_ns(msg.header.stamp), R.from_quat(values))
+        self._calibration_rotation = self._calibration_history.at()
 
     # A _commanded_attitude frame used to be published here from
     # GimbalManagerSetAttitude. That message carries no header, so every

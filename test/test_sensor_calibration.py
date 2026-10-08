@@ -47,3 +47,19 @@ def test_gimbal_preserves_nominal_frame_and_postrotates_only_once():
     q2=received[1][1].transform.rotation
     np.testing.assert_allclose(R.from_quat([q2.x,q2.y,q2.z,q2.w]).as_matrix(),
                                g._calibration_rotation.as_matrix())
+
+
+def test_late_attitude_uses_calibration_active_at_measurement_time():
+    received=[]
+    g=SimpleNamespace(FRAME_NAME='uas3_gimbal_frame', GIMBAL_REF_FRAME_NAME='ref',
+        IGNORE_REPORTED_YAW=False, tf_broadcaster=SimpleNamespace(sendTransform=received.append))
+    p=packet(); p.header.stamp.sec=3
+    Gimbal.update_calibration(g,p)
+    msg=GimbalDeviceAttitudeStatus(); msg.q.w=1.; msg.header.stamp.sec=2
+    Gimbal.publish_orientation(g,msg)
+    q=received[-1][1].transform.rotation
+    np.testing.assert_allclose(R.from_quat([q.x,q.y,q.z,q.w]).as_matrix(),np.eye(3))
+    msg.header.stamp.sec=4
+    Gimbal.publish_orientation(g,msg)
+    q=received[-1][1].transform.rotation
+    np.testing.assert_allclose(R.from_quat([q.x,q.y,q.z,q.w]).as_matrix(),g._calibration_rotation.as_matrix())

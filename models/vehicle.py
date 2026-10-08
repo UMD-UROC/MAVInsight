@@ -18,8 +18,7 @@ from std_msgs.msg import Header, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
-from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
-from mavinsight.localization_reference import LocalizationReference, ReferenceState, stamp_ns
+from mavinsight.localization_reference import LocalizationReference, ReferenceState, reference_topic, stamp_ns
 from models.frame_member import FrameMember
 from models.gimbal_frame import (FLAGS_NEUTRAL, FLAGS_PITCH_LOCK,
                                  FLAGS_RETRACT, FLAGS_ROLL_LOCK,
@@ -249,10 +248,10 @@ class Vehicle(FrameMember):
         # late-joining ground consumers (fleet_tf in particular).
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, latched_reliable_qos)
         self.reference_pub = self.create_publisher(
-            String, home_fix_topic.rsplit('/', 2)[0] + '/localization/reference',
+            String, reference_topic(home_fix_topic),
             latched_reliable_qos)
         self.reference_events_pub = self.create_publisher(
-            String, home_fix_topic.rsplit('/', 2)[0] + '/localization/reference_events',
+            String, reference_topic(home_fix_topic, events=True),
             reliable_qos)
         self.localization_reference = LocalizationReference()
         self.external_reference_topic = (self.get_parameter('localization_reference_topic').value
@@ -363,11 +362,12 @@ class Vehicle(FrameMember):
         self._fiducial_correction = Vector3()
         self._fiducial_lla = list(self.get_parameter('fiducial_lla').value) \
             if self.has_parameter('fiducial_lla') else None
-        self._fiducial_fix_pub = self.create_publisher(NavSatFix, '/fiducial/fix', reliable_qos)
+        self._fiducial_fix_pub = self.create_publisher(NavSatFix, '/fiducial/fix', latched_reliable_qos)
+        self.create_timer(1.0, self._publish_reference_fixes)
 
         # Stable application HOME -> EKF offset. Atomic H-h composition
-        # absorbs paired PX4 home changes before any consumer sees them. A static transform has no time
-        # extent, so a move rewrites the whole past and every lookup already in
+        # absorbs paired PX4 home changes before any consumer sees them.
+        # A static transform has no time extent, so a move rewrites the whole past and every lookup already in
         # flight silently changes answer. It is sent from the pose callback
         # instead of from home_cb, because mavros can go minutes without
         # republishing home_position/home and one sample per update leaves the
@@ -429,7 +429,7 @@ class Vehicle(FrameMember):
 
         Rotation is ignored; corrections are translation-only.
         """
-        if not self.publish_fiducial_edge or self.external_reference_topic:
+        if self.external_reference_topic:
             return
         if (msg.header.frame_id not in (self.UNCORRECTED_HOME_FRAME,
                                         self.FIDUCIAL_FRAME)
@@ -534,7 +534,7 @@ class Vehicle(FrameMember):
 
         # The home offset rides the pose rate so that it has a real time extent.
         # home_cb also sends once immediately to connect the tree at startup.
-        if self.home_t is not None:
+        if self.publish_fiducial_edge and self.home_t is not None:
             state = self._reference_state(head_out.stamp)
             if state is not None:
                 tfs.append(TransformStamped(
@@ -599,6 +599,25 @@ class Vehicle(FrameMember):
             ))
 
         self.tf_broadcaster.sendTransform(tfs)
+
+    def _publish_reference_fixes(self):
+        """Also serve existing volatile fix readers that join after startup."""
+        stamp = self.get_clock().now().to_msg()
+        if self._fiducial_lla and len(self._fiducial_lla) == 3:
+            self._fiducial_fix_pub.publish(NavSatFix(
+                header=Header(frame_id=self.FIDUCIAL_FRAME, stamp=stamp),
+                latitude=float(self._fiducial_lla[0]), longitude=float(self._fiducial_lla[1]),
+                altitude=float(self._fiducial_lla[2])))
+        state = self._reference_state(stamp)
+        if state is None:
+            return
+        self.home_fix_pub.publish(NavSatFix(
+            header=Header(frame_id=self.HOME_FRAME, stamp=stamp),
+            latitude=state.anchor[0], longitude=state.anchor[1], altitude=state.anchor[2]))
+        lat, lon, alt = state.frame_anchor(self.EKF_FRAME, corrected=False)
+        self.ekf_fix_pub.publish(NavSatFix(
+            header=Header(frame_id=self.EKF_FRAME, stamp=stamp),
+            latitude=lat, longitude=lon, altitude=alt))
 
     def _reference_state(self, stamp):
         return self.localization_reference.state(
@@ -672,8 +691,8 @@ class Vehicle(FrameMember):
             child_frame_id=self.EKF_FRAME,
             transform=Transform(translation=Vector3(
                 x=state.ekf_offset[0], y=state.ekf_offset[1], z=state.ekf_offset[2])))
-        self.tf_broadcaster.sendTransform(
-            self._root_tfs(stamp) + [self.home_t])
+        if self.publish_fiducial_edge:
+            self.tf_broadcaster.sendTransform(self._root_tfs(stamp) + [self.home_t])
         self._publish_reference(stamp)
         lat, lon, alt = state.frame_anchor(self.EKF_FRAME, corrected=False)
         self.ekf_fix_pub.publish(NavSatFix(

@@ -1,5 +1,7 @@
 # python imports
 import math
+from copy import deepcopy
+import pymap3d as pm
 from scipy.spatial.transform import Rotation as R
 
 # ROS2 message imports
@@ -58,6 +60,10 @@ class TBA_Viz(GraphMember):
         self.latest_pub = self.create_publisher(MarkerArray, loc_viz_topic_latest, reliable_qos)
         self.previous_pub = self.create_publisher(MarkerArray, loc_viz_topic_previous, reliable_qos)
 
+        self._fiducial_lla = (tuple(self.get_parameter('fiducial_lla').value)
+                              if self.has_parameter('fiducial_lla') else None)
+        if self._fiducial_lla and not any(self._fiducial_lla[:2]):
+            self._fiducial_lla = None
         self.i = 0
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Localization Visualization initialized!")
 
@@ -72,9 +78,17 @@ class TBA_Viz(GraphMember):
             self.get_logger().error("AAAAA2")
             return
 
-        drone_pose = msg.uav_local_pose.pose.pose
+        drone_pose = deepcopy(msg.uav_local_pose.pose.pose)
+        display_frame = self.LOC_FRAME
+        if self._fiducial_lla:
+            display_frame = 'fiducial'
+            fix = msg.uav_gps_location
+            e, n, u = pm.geodetic2enu(fix.latitude, fix.longitude, fix.altitude,
+                                     *self._fiducial_lla, deg=True)
+            drone_pose.position.x, drone_pose.position.y, drone_pose.position.z = (
+                float(e), float(n), float(u))
         drone_marker = Marker()
-        drone_marker.header=Header(frame_id=self.LOC_FRAME)
+        drone_marker.header=Header(frame_id=display_frame)
         drone_marker.ns="drone"
         drone_marker.id=0
         drone_marker.pose.position.x=drone_pose.position.x
@@ -115,7 +129,7 @@ class TBA_Viz(GraphMember):
         (x, y, z, w) = R_world_gimbal.as_quat()
 
         rangefinder_marker = Marker(
-            header=Header(frame_id=self.LOC_FRAME),
+            header=Header(frame_id=display_frame),
             ns="rangefinder",
             id=0,
             type=Marker.ARROW,
@@ -159,8 +173,13 @@ class TBA_Viz(GraphMember):
                 if fix.header.stamp.sec == 0:
                     continue
                 loc: NavSatFix = fix
-                e, n, u = lla_2_enu(msg.uav_gps_location, loc, ignore_alt=False)
-                sink.append((e + drone_p.x, n + drone_p.y, u + drone_p.z))
+                if self._fiducial_lla:
+                    e, n, u = pm.geodetic2enu(loc.latitude, loc.longitude, loc.altitude,
+                                             *self._fiducial_lla, deg=True)
+                    sink.append((float(e), float(n), float(u)))
+                else:
+                    e, n, u = lla_2_enu(msg.uav_gps_location, loc, ignore_alt=False)
+                    sink.append((e + drone_p.x, n + drone_p.y, u + drone_p.z))
 
         # one marker per localization mode, each in its own namespace so they can be toggled
         # independently -- the gimbal-plane and rangefinder fixes used to be computed here and
@@ -173,7 +192,7 @@ class TBA_Viz(GraphMember):
             if not fixes:
                 continue
             markers.append(Marker(
-                header=Header(frame_id=self.LOC_FRAME),
+                header=Header(frame_id=display_frame),
                 ns=ns,
                 id=0,
                 type=Marker.SPHERE_LIST,

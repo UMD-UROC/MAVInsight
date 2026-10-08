@@ -108,3 +108,14 @@ def test_ground_adopts_air_anchor_instead_of_choosing_late_home():
     ground.ingest(air.state(10, *FRAMES))
     assert ground.state(30, *FRAMES).correction == (1., -2., .5)
     assert ground.state(15, *FRAMES).correction == (0., 0., 0.)
+
+
+@pytest.mark.parametrize('fix,expected', [
+    ('home_position/fix', 'localization/reference'),
+    ('/uas3/home_position/fix', '/uas3/localization/reference'),
+    ('/uas3/ekf_origin/fix', '/uas3/localization/reference'),
+])
+def test_reference_topic_is_vehicle_scoped_for_relative_and_absolute_fixes(fix, expected):
+    from mavinsight.localization_reference import reference_topic
+    assert reference_topic(fix) == expected
+    assert reference_topic(fix, events=True) == expected + '_events'
