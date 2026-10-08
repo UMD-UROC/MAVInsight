@@ -48,8 +48,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'publish_fiducial_edge', default_value='true', choices=['true', 'false'],
             description='Publish this vehicle\'s fiducial -> raw home -> corrected home TF '
-                        'edges. The ground fleet builder is the sole authority when several '
-                        'vehicles share one domain.'),
+                        'edges. Each vehicle owns its complete reference chain.'),
+        DeclareLaunchArgument('localization_reference_topic', default_value='',
+                              description='Onboard canonical reference for ground reconstruction.'),
         DeclareLaunchArgument('fiducial_lla', default_value='',
                               description='Known fiducial LLA as lat,lon,alt.'),
         DeclareLaunchArgument(
@@ -71,6 +72,7 @@ def frame_tree(context, *args, **kwargs):
     bench = LaunchConfiguration('bench').perform(context) == 'true'
     publish_fiducial_edge = LaunchConfiguration('publish_fiducial_edge').perform(context) == 'true'
     fiducial_lla = LaunchConfiguration('fiducial_lla').perform(context)
+    reference_topic = LaunchConfiguration('localization_reference_topic').perform(context)
     camera_rotation = [float(value) for value in LaunchConfiguration(
         'camera_mount_rotation_deg').perform(context).split(',')]
     if len(camera_rotation) != 3 or not all(math.isfinite(value) for value in camera_rotation):
@@ -84,11 +86,12 @@ def frame_tree(context, *args, **kwargs):
     ) for name, config in frame_configs(
         number, model, camera=camera, sim=sim, bench=bench,
         publish_fiducial_edge=publish_fiducial_edge, fiducial_lla=fiducial_lla,
-        camera_rotation=camera_rotation)]
+        camera_rotation=camera_rotation, localization_reference_topic=reference_topic)]
 
 
 def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
-                  publish_fiducial_edge=True, fiducial_lla='', camera_rotation=None):
+                  publish_fiducial_edge=True, fiducial_lla='', camera_rotation=None,
+                  localization_reference_topic=''):
     """Build the same named TF-node configurations for live launch and bag replay.
 
     Replay writes these dictionaries to parameter files with use_sim_time set
@@ -143,6 +146,7 @@ def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
             config['bench_base_altitude'] = 20.0
         if file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
             config['publish_fiducial_edge'] = publish_fiducial_edge
+            config['localization_reference_topic'] = localization_reference_topic
             if fiducial_lla:
                 config['fiducial_lla'] = [float(value) for value in fiducial_lla.split(',')]
 

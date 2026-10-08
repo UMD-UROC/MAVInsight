@@ -42,3 +42,42 @@ The selected camera uses the existing `uas<N>_rgb_offset` and
 belong to the same camera. The mounting rotation is applied once on the static
 `gimbal_frame -> rgb_offset` edge; CameraInfo R stays identity. Measurements,
 fiducial correction, and image/3D visualization therefore share the same TF.
+
+## Localization reference and PX4 home updates
+
+Vehicle owns the complete reference chain. Application `uasN_home_uncorrected`
+and `uasN_home_position` are stable ENU frames anchored at the first complete
+home received by the onboard Vehicle process. They are **not PX4's current RTL
+home**. The original MAVROS `home_position/home` message remains unchanged.
+`home_position/fix` now describes the stable application anchor.
+
+Every home message is composed atomically as geographic home minus local ENU
+home. Only this composed EKF offset enters the application tree. Paired home
+altitude/position changes therefore cancel before calibration, localization,
+terrain or visualization can see separate moving terms. Genuine changes to the
+composed reference remain visible. ENU translations use the existing site-scale
+identity-aligned frame convention; this does not add estimator-reset compensation.
+
+`/uasN/localization/reference` is reliable, transient-local current state;
+`/uasN/localization/reference_events` is reliable event history for recording and
+live consumers. Both carry schema-1 JSON in `std_msgs/String`: process generation,
+activation nanoseconds, fixed ellipsoid-height anchor, composed raw EKF offset,
+survey translation and frame names. Geographic consumers should use one immutable
+snapshot at measurement time. Home and calibration state are sample-and-hold;
+continuous body/sensor telemetry remains in TF. Historical requests preceding
+available reference history must fail rather than use future state.
+
+For ground reconstruction, set `localization_reference_topic` in
+`launch_sim.launch.py` to `/uasN/localization/reference/on_air`. Vehicle then
+adopts the air anchor and complete snapshots, ignores its independently received
+MAVROS home and translation updates, and owns all local root edges. Bridge both
+reference topics; `/tf` still need not cross the link. An empty argument is the
+onboard/default mode and also supports old bag reconstruction. Do not run a fleet
+root publisher alongside a Vehicle publishing its root edges.
+
+A process restart starts a new reference generation. Consumers clear history
+when a newer generation arrives. This identifier is not a controller boot ID;
+actual EKF resets, changing hardware/datum, and calibration provenance still need
+operational validation. Restart consumers together when replay time goes backward.
+Keep COM_HOME_IN_AIR=0 for complete-home surveyed missions: it does not disable
+PX4's independent GNSS/barometer altitude corrections.

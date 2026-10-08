@@ -14,11 +14,12 @@ from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, Transfo
 from mavros_msgs.msg import Altitude, HomePosition, GimbalDeviceAttitudeStatus
 from nav_msgs.msg import Path
 from sensor_msgs.msg import NavSatFix
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
 from models.frame_utils import enu_2_lla, frd_ned_2_flu_enu
+from mavinsight.localization_reference import LocalizationReference, ReferenceState, stamp_ns
 from models.frame_member import FrameMember
 from models.gimbal_frame import (FLAGS_NEUTRAL, FLAGS_PITCH_LOCK,
                                  FLAGS_RETRACT, FLAGS_ROLL_LOCK,
@@ -247,6 +248,20 @@ class Vehicle(FrameMember):
         # Home is state, not high-rate telemetry.  Keep the latest value for
         # late-joining ground consumers (fleet_tf in particular).
         self.home_fix_pub = self.create_publisher(NavSatFix, home_fix_topic, latched_reliable_qos)
+        self.reference_pub = self.create_publisher(
+            String, home_fix_topic.rsplit('/', 2)[0] + '/localization/reference',
+            latched_reliable_qos)
+        self.reference_events_pub = self.create_publisher(
+            String, home_fix_topic.rsplit('/', 2)[0] + '/localization/reference_events',
+            reliable_qos)
+        self.localization_reference = LocalizationReference()
+        self.external_reference_topic = (self.get_parameter('localization_reference_topic').value
+                                         if self.has_parameter('localization_reference_topic') else '')
+        if self.external_reference_topic:
+            self.create_subscription(String, self.external_reference_topic,
+                                     self.reference_cb, latched_reliable_qos)
+            self.create_subscription(String, self.external_reference_topic.replace(
+                '/reference/', '/reference_events/'), self.reference_cb, reliable_qos)
         self.ekf_fix_pub = self.create_publisher(NavSatFix, ekf_topic, reliable_qos)
         self.velocity_vector_pub = self.create_publisher(Marker, f"{namespace}velocityVector", reliable_qos)
 
@@ -350,8 +365,8 @@ class Vehicle(FrameMember):
             if self.has_parameter('fiducial_lla') else None
         self._fiducial_fix_pub = self.create_publisher(NavSatFix, '/fiducial/fix', reliable_qos)
 
-        # home -> ekf origin offset. It is dynamic, because it moves: PX4 moves
-        # home at arm and at an EKF origin reset. A static transform has no time
+        # Stable application HOME -> EKF offset. Atomic H-h composition
+        # absorbs paired PX4 home changes before any consumer sees them. A static transform has no time
         # extent, so a move rewrites the whole past and every lookup already in
         # flight silently changes answer. It is sent from the pose callback
         # instead of from home_cb, because mavros can go minutes without
@@ -393,9 +408,16 @@ class Vehicle(FrameMember):
         if (not self.publish_fiducial_edge
                 or not hasattr(self, '_home_lla') or not self._fiducial_lla):
             return []
-        self.raw_home_t.header.stamp = stamp
-        self.correction_t.header.stamp = stamp
-        return [self.raw_home_t, self.correction_t]
+        from copy import deepcopy
+        raw, correction = deepcopy(self.raw_home_t), deepcopy(self.correction_t)
+        raw.header.stamp = correction.header.stamp = stamp
+        if hasattr(self, 'localization_reference'):
+            state = self._reference_state(stamp)
+            if state is None:
+                return []
+            correction.transform.translation = Vector3(
+                x=state.correction[0], y=state.correction[1], z=state.correction[2])
+        return [raw, correction]
 
     def update_fiducial(self, msg: TransformStamped):
         """Apply a correction-only raw-home -> corrected-home update.
@@ -407,7 +429,7 @@ class Vehicle(FrameMember):
 
         Rotation is ignored; corrections are translation-only.
         """
-        if not self.publish_fiducial_edge:
+        if not self.publish_fiducial_edge or self.external_reference_topic:
             return
         if (msg.header.frame_id not in (self.UNCORRECTED_HOME_FRAME,
                                         self.FIDUCIAL_FRAME)
@@ -419,6 +441,13 @@ class Vehicle(FrameMember):
             return
 
         old, new = self._fiducial_correction, msg.transform.translation
+        if not np.all(np.isfinite([new.x, new.y, new.z])):
+            return
+        activation = stamp_ns(msg.header.stamp)
+        if activation < getattr(self, '_correction_activation', -1):
+            return
+        self._correction_activation = activation
+        self.localization_reference.update_correction(activation, (new.x, new.y, new.z))
         # tf_loc publishes a survey once and latches it, so this node is re-told the standing
         # correction whenever it restarts, and the update usually carries a value we already
         # hold. Re-broadcast regardless -- a restart comes up with an identity edge and this is
@@ -431,6 +460,7 @@ class Vehicle(FrameMember):
         if root_tfs:
             self.tf_broadcaster.sendTransform(root_tfs)
 
+        self._publish_reference(msg.header.stamp)
         if changed:
             self.get_logger().info(
                 f"updated fiducial correction: ({new.x:+.2f}, {new.y:+.2f}, {new.z:+.2f})m"
@@ -505,8 +535,14 @@ class Vehicle(FrameMember):
         # The home offset rides the pose rate so that it has a real time extent.
         # home_cb also sends once immediately to connect the tree at startup.
         if self.home_t is not None:
-            self.home_t.header.stamp = head_out.stamp
-            tfs.append(self.home_t)
+            state = self._reference_state(head_out.stamp)
+            if state is not None:
+                tfs.append(TransformStamped(
+                    header=Header(stamp=head_out.stamp, frame_id=self.HOME_FRAME),
+                    child_frame_id=self.EKF_FRAME,
+                    transform=Transform(translation=Vector3(
+                        x=state.ekf_offset[0], y=state.ekf_offset[1],
+                        z=state.ekf_offset[2]))))
 
         # build PoseStamped for path
         # Path update
@@ -564,65 +600,85 @@ class Vehicle(FrameMember):
 
         self.tf_broadcaster.sendTransform(tfs)
 
+    def _reference_state(self, stamp):
+        return self.localization_reference.state(
+            stamp_ns(stamp), self.UNCORRECTED_HOME_FRAME,
+            self.HOME_FRAME, self.EKF_FRAME)
+
+    def _publish_reference(self, stamp):
+        state = self._reference_state(stamp)
+        if state is None:
+            return
+        message = String(data=state.encode())
+        self.reference_events_pub.publish(message)
+        # A delayed event belongs in history, not in the latched latest state.
+        latest_stamp = max(self.localization_reference.latest_home_stamp,
+                           getattr(self, '_correction_activation', 0))
+        latest = self.localization_reference.state(
+            latest_stamp, self.UNCORRECTED_HOME_FRAME, self.HOME_FRAME, self.EKF_FRAME)
+        self.reference_pub.publish(String(data=latest.encode()))
+
     def home_cb(self, msg: HomePosition):
+        """Consume an atomic geographic/local pair, never separate home edges.
+
+        Original PX4 navigation home remains on MAVROS home_position/home.
+        home_position/fix describes the stable application HOME frame.
         """
-        TODO: If the home position is going to be in our frame tree, then we need to
-        better understand the implications, and make sure this is being TIME SYNCED
-        properly.
-        Current:
-            Using the home position's local coordinates to back-out the local EKF
-            Origin so that we can use the EKF-centered local position estimate in
-            our tree. In theory, this allows us capture ekf corrections, which only
-            present obviously in changes to the home position. Other benefits
-            include better viz for the TRUE local position origin and home position
-            viz.
-        Alternative:
-            Just ground the Local position estimate as the authoritative loczn position
-            estimate.
-            OR
-            Use the Home-position grounded local position estimate and chain
-            off of that. (no-op, really)
-        TIME SYNC CONSIDERATION:
-            DTC rosbags show home position is only published @ .5Hz,but home position
-            correction seems infrequent. SEE: Foxglove PLOT viz of local coords of home.
-        """
-        home_fix = NavSatFix(
-            header=Header(frame_id=self.HOME_FRAME, stamp=msg.header.stamp),
-            latitude=msg.geo.latitude,
-            longitude=msg.geo.longitude,
-            altitude=msg.geo.altitude
-        )
-        self.home_fix_pub.publish(home_fix)
+        if self.external_reference_topic:
+            return
+        try:
+            changed = self.localization_reference.update_home(
+                stamp_ns(msg.header.stamp),
+                (msg.geo.latitude, msg.geo.longitude, msg.geo.altitude),
+                (msg.position.x, msg.position.y, msg.position.z))
+        except ValueError as error:
+            self.get_logger().error(str(error))
+            return
+        if not changed:
+            return
+        self._apply_reference(msg.header.stamp)
+
+    def reference_cb(self, msg: String):
+        try:
+            state = ReferenceState.decode(msg.data)
+            if (state.raw_frame, state.home_frame, state.ekf_frame) != (
+                    self.UNCORRECTED_HOME_FRAME, self.HOME_FRAME, self.EKF_FRAME):
+                return
+            if not self.localization_reference.ingest(state):
+                return
+            from builtin_interfaces.msg import Time
+            stamp = Time(sec=state.stamp // 1_000_000_000,
+                         nanosec=state.stamp % 1_000_000_000)
+            self._apply_reference(stamp)
+        except (ValueError, TypeError, KeyError) as error:
+            self.get_logger().error(f'invalid onboard localization reference: {error}')
+
+    def _apply_reference(self, stamp):
+        anchor = self.localization_reference.anchor
+        self._home_lla = NavSatFix(
+            header=Header(frame_id=self.HOME_FRAME, stamp=stamp),
+            latitude=anchor[0], longitude=anchor[1], altitude=anchor[2])
+        self.home_fix_pub.publish(self._home_lla)
         if self._fiducial_lla and len(self._fiducial_lla) == 3:
             self._fiducial_fix_pub.publish(NavSatFix(
-                header=Header(frame_id=self.FIDUCIAL_FRAME, stamp=msg.header.stamp),
+                header=Header(frame_id=self.FIDUCIAL_FRAME, stamp=stamp),
                 latitude=float(self._fiducial_lla[0]),
                 longitude=float(self._fiducial_lla[1]),
                 altitude=float(self._fiducial_lla[2])))
-        self._home_lla = home_fix
         self._compose_fiducial_edges()
-        # hold the new offset. publish_position sends it at the pose rate, so
-        # the step lands on the first pose after this message and the transforms
-        # already in the buffer keep the value they were looked up with.
+        state = self._reference_state(stamp)
         self.home_t = TransformStamped(
-            header=Header(stamp=msg.header.stamp, frame_id=self.HOME_FRAME),
+            header=Header(stamp=stamp, frame_id=self.HOME_FRAME),
             child_frame_id=self.EKF_FRAME,
-            transform=Transform(translation=Vector3(x=-msg.position.x, y=-msg.position.y, z=-msg.position.z))
-        )
-        # Publish immediately as well as on the pose stream.  Consumers such
-        # as scoring and ground projection may start looking up the chain
-        # before the first local-pose sample arrives; holding the transform
-        # until publish_position leaves an apparently disconnected TF tree.
+            transform=Transform(translation=Vector3(
+                x=state.ekf_offset[0], y=state.ekf_offset[1], z=state.ekf_offset[2])))
         self.tf_broadcaster.sendTransform(
-            self._root_tfs(msg.header.stamp) + [self.home_t])
-
-        (lat_e, lon_e, alt_e) = enu_2_lla(home_fix, -msg.position.x, -msg.position.y, -msg.position.z)
+            self._root_tfs(stamp) + [self.home_t])
+        self._publish_reference(stamp)
+        lat, lon, alt = state.frame_anchor(self.EKF_FRAME, corrected=False)
         self.ekf_fix_pub.publish(NavSatFix(
-            header=Header(frame_id=self.EKF_FRAME, stamp=msg.header.stamp),
-            latitude=lat_e,
-            longitude=lon_e,
-            altitude=alt_e
-        ))
+            header=Header(frame_id=self.EKF_FRAME, stamp=stamp),
+            latitude=lat, longitude=lon, altitude=alt))
 
     def _compose_fiducial_edges(self):
         """Place raw HOME from GPS and publish the survey as its own edge."""

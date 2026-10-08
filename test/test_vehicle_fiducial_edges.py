@@ -58,3 +58,46 @@ def test_vehicle_composes_raw_home_and_correction_as_separate_edges():
     assert vehicle.correction_t.transform.rotation.w == 1.0
     assert raw_edge.header.stamp.sec == 20
     assert correction_edge.header.stamp.sec == 20
+
+
+def test_vehicle_home_callback_keeps_application_anchor_and_complete_chain(monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    import pytest
+    from mavros_msgs.msg import HomePosition
+    from mavinsight.localization_reference import LocalizationReference, ReferenceState
+
+    v = Vehicle.__new__(Vehicle)
+    monkeypatch.setattr(Vehicle, 'get_clock', lambda self: Clock())
+    v.HOME_FRAME = 'uas4_home_position'
+    v.UNCORRECTED_HOME_FRAME = 'uas4_home_uncorrected'
+    v.EKF_FRAME = 'uas4_ekf_origin'
+    v.FIDUCIAL_FRAME = 'fiducial'
+    v._fiducial_lla = [38., -76., 12.]
+    v._fiducial_correction = Vector3(x=1., y=-2., z=.5)
+    v.raw_home_t = TransformStamped()
+    v.correction_t = TransformStamped()
+    v.publish_fiducial_edge = True
+    v.external_reference_topic = ''
+    v.localization_reference = LocalizationReference()
+    v.localization_reference.update_correction(0, (1., -2., .5))
+    sent, states, fixes = [], [], []
+    v.tf_broadcaster = SimpleNamespace(sendTransform=lambda x: sent.append(deepcopy(x)))
+    v.home_fix_pub = SimpleNamespace(publish=lambda x: fixes.append(deepcopy(x)))
+    v.reference_pub = SimpleNamespace(publish=lambda x: states.append(ReferenceState.decode(x.data)))
+    v.reference_events_pub = v._fiducial_fix_pub = v.ekf_fix_pub = SimpleNamespace(publish=lambda x: None)
+    msg = HomePosition()
+    msg.header.stamp.sec = 1
+    msg.geo.latitude, msg.geo.longitude, msg.geo.altitude = 38.0001, -75.9998, 22.
+    msg.position.z = -5.
+    v.home_cb(msg)
+    msg.header.stamp.sec = 2
+    msg.geo.altitude -= 1.
+    msg.position.z -= 1.
+    v.home_cb(msg)
+    assert fixes[-1].altitude == fixes[0].altitude == 22.
+    assert states[-1].ekf_offset == pytest.approx(states[0].ekf_offset, abs=1e-8)
+    for edges in sent:
+        assert len(edges) == 3
+        assert len({(e.header.stamp.sec, e.header.stamp.nanosec) for e in edges}) == 1
+    assert sent[-1][-1].transform.translation.z == pytest.approx(5.)
