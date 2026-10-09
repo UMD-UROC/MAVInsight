@@ -5,3 +5,7 @@
 # Python bytecode. colcon builds in place, so these appear next to the sources.
 __pycache__/
 *.py[cod]
+
+# Local vehicle visualization exports.
+/resource/Chimera D Ver.3 VIS ONLY.obj
+/resource/Chimera D Ver.3 VIS ONLY.mtl
