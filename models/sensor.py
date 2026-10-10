@@ -306,7 +306,7 @@ class Gimbal(Sensor):
             R_ref_g = without_reported_yaw(R_ref_g)
         nominal_tf = TransformStamped(
             header=Header(stamp=msg.header.stamp, frame_id=self.GIMBAL_REF_FRAME_NAME),
-            child_frame_id=f'{self.FRAME_NAME}_nominal',
+            child_frame_id=f'{self.FRAME_NAME}_uncorrected',
             transform=Transform(rotation=rot_2_quat(R_ref_g)))
         history = getattr(self, '_calibration_history', None)
         calibration = (history.at(stamp_ns(msg.header.stamp)) if history is not None
@@ -346,7 +346,7 @@ class Gimbal(Sensor):
             header=Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME),
             child_frame_id=f'{self.FRAME_NAME}_{suffix}',
             transform=Transform(rotation=rot_2_quat(rotation)))
-            for suffix,rotation in [('encoder_nominal',nominal),('encoder',nominal*calibration)]]
+            for suffix,rotation in [('encoder_uncorrected',nominal),('encoder',nominal*calibration)]]
         self.tf_broadcaster.sendTransform(transforms)
         self._encoder_pending.append(msg.header.stamp)
 

@@ -29,7 +29,7 @@ def test_vehicle_keeps_sensor_rotation_out_of_navigation_edge():
     assert (t.rotation.x,t.rotation.y,t.rotation.z,t.rotation.w)==(0.,0.,0.,1.)
 
 
-def test_gimbal_preserves_nominal_frame_and_postrotates_only_once():
+def test_gimbal_preserves_uncorrected_frame_and_postrotates_only_once():
     received=[]
     g=SimpleNamespace(FRAME_NAME='uas3_gimbal_frame',GIMBAL_REF_FRAME_NAME='ref',
         IGNORE_REPORTED_YAW=False,tf_broadcaster=SimpleNamespace(sendTransform=received.append))
@@ -37,7 +37,7 @@ def test_gimbal_preserves_nominal_frame_and_postrotates_only_once():
     msg=GimbalDeviceAttitudeStatus();msg.q.w=1.
     Gimbal.publish_orientation(g,msg)
     nominal,corrected=received[0]
-    assert nominal.child_frame_id=='uas3_gimbal_frame_nominal'
+    assert nominal.child_frame_id=='uas3_gimbal_frame_uncorrected'
     nq=nominal.transform.rotation
     np.testing.assert_allclose(R.from_quat([nq.x,nq.y,nq.z,nq.w]).as_matrix(),np.eye(3))
     q=corrected.transform.rotation

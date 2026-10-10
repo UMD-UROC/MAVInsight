@@ -7,13 +7,14 @@ disagreement between body-derived level and gimbal level. Looking up the
 measured frame in world, body or reported frames remains possible through TF.
 
 For each UAS, the shared model-selected gimbal node publishes:
-  uasN_gimbal_frame_encoder_nominal: mechanical joints in ROS FLU
+  uasN_gimbal_frame_uncorrected: fused estimate before sensor correction
+  uasN_gimbal_frame_encoder_uncorrected: mechanical joints in ROS FLU
   uasN_gimbal_frame_encoder: same joints with the existing sensor calibration
   uasN_gimbal_frame_reported_full: full roll/pitch report for comparisons
 The existing uasN_gimbal_frame and its pitch-only v2 policy are preserved.
 The existing calibrated gimbal camera and its mounting offsets are preserved.
 Sensor calibration is post-multiplied once, with the same time-indexed
-calibration history as the reported gimbal. Nominal measured/reported frames
+calibration history as the reported gimbal. Uncorrected measured/reported frames
 remain available for examining uncorrected measurements.
 
 ROS FLU boresight is +x. Mechanical rotation is Rz(yaw)*Rx(roll)*Ry(pitch),
