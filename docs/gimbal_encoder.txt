@@ -1,0 +1,44 @@
+Measured encoder frame and body/level comparison
+
+The existing body -> gimbal_frame_offset edge supplies the physical mount
+translation/rotation. Encoder frames are children of this SAME mount offset,
+not of the stabilized gimbal reference or fused attitude. That preserves
+disagreement between body-derived level and gimbal level. Looking up the
+measured frame in world, body or reported frames remains possible through TF.
+
+For each UAS, the shared model-selected gimbal node publishes:
+  uasN_gimbal_frame_encoder_nominal: mechanical joints in ROS FLU
+  uasN_gimbal_frame_encoder: same joints with the existing sensor calibration
+  uasN_gimbal_frame_reported_full: full roll/pitch report for comparisons
+The existing uasN_gimbal_frame and its pitch-only v2 policy are preserved.
+The existing calibrated gimbal camera and its mounting offsets are preserved.
+Sensor calibration is post-multiplied once, with the same time-indexed
+calibration history as the reported gimbal. Nominal measured/reported frames
+remain available for examining uncorrected measurements.
+
+ROS FLU boresight is +x. Mechanical rotation is Rz(yaw)*Rx(roll)*Ry(pitch),
+with outermost yaw and innermost pitch. Model-selected gimbal.has_yaw_axis
+determines whether a measured yaw joint is mandatory. V2 uses yaw=0 relative
+to the body; it does not inherit nonphysical reported MAVLink yaw.
+
+Reported_full removes v2 reported yaw while retaining report roll/pitch.
+At a pitch pole (+/-90 degrees), separate roll/yaw cannot be recovered from
+the report; its original full quaternion remains on the MAVROS topic.
+Independent-axis tests verify labels and signs. Combined-angle behavior
+uses the user-confirmed outer-roll/inner-pitch geometry.
+
+/uasN/gimbal_encoder/comparison contains the reported-to-measured quaternion,
+its angular magnitude and rotation vector, plus mount-to-encoder and
+mount-to-reference quaternions. TF is looked up at each encoder timestamp,
+waiting for the slower body/gimbal streams; no arbitrary latest pose is
+substituted. Missing coverage drops the comparison after two seconds.
+These residuals contain mechanical zero/calibration differences and sensor
+reference disagreement. They do not isolate those causes automatically.
+
+Record stationary home/level first, then body tilts with stabilization active
+to distinguish reference disagreement from a joint offset. Record /tf,
+/tf_static, /uasN/local_position/pose, /uasN/home_position/home,
+/uasN/gimbal_control/device/attitude_status, encoder topics, and the existing
+fiducial_calibration/update. No auto-zero or alignment to the fused report
+is performed. The measured frame thus retains what a previous encoder-only
+bench capture could not show about the drone and gimbal reference frames.

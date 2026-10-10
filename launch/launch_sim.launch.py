@@ -43,6 +43,9 @@ def generate_launch_description():
             description='Build the tree from the simulated airframe\'s '
                         'dimensions rather than the aircraft\'s.'),
         DeclareLaunchArgument(
+            'gimbal_encoder', default_value='false', choices=['true', 'false'],
+            description='Publish measured encoder and full reported comparison frames.'),
+        DeclareLaunchArgument(
             'bench', default_value='false', choices=['true', 'false'],
             description='Place the bench vehicle 20 m above its home frame.'),
         DeclareLaunchArgument(
@@ -70,6 +73,7 @@ def frame_tree(context, *args, **kwargs):
     camera = LaunchConfiguration('camera').perform(context)
     sim = LaunchConfiguration('sim').perform(context) == 'true'
     bench = LaunchConfiguration('bench').perform(context) == 'true'
+    encoder_enabled = LaunchConfiguration('gimbal_encoder').perform(context) == 'true'
     publish_fiducial_edge = LaunchConfiguration('publish_fiducial_edge').perform(context) == 'true'
     fiducial_lla = LaunchConfiguration('fiducial_lla').perform(context)
     reference_topic = LaunchConfiguration('localization_reference_topic').perform(context)
@@ -86,12 +90,13 @@ def frame_tree(context, *args, **kwargs):
     ) for name, config in frame_configs(
         number, model, camera=camera, sim=sim, bench=bench,
         publish_fiducial_edge=publish_fiducial_edge, fiducial_lla=fiducial_lla,
-        camera_rotation=camera_rotation, localization_reference_topic=reference_topic)]
+        camera_rotation=camera_rotation, localization_reference_topic=reference_topic,
+        gimbal_encoder=encoder_enabled)]
 
 
 def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
                   publish_fiducial_edge=True, fiducial_lla='', camera_rotation=None,
-                  localization_reference_topic=''):
+                  localization_reference_topic='', gimbal_encoder=False):
     """Build the same named TF-node configurations for live launch and bag replay.
 
     Replay writes these dictionaries to parameter files with use_sim_time set
@@ -142,6 +147,9 @@ def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
             # V2 is pitch/roll-only, so its reported yaw is non-physical. V3
             # retains the existing full reported-attitude path.
             config['ignore_reported_yaw'] = not gimbal_has_yaw_axis
+            config['encoder_enabled'] = bool(gimbal_encoder)
+            config['encoder_has_yaw_axis'] = gimbal_has_yaw_axis
+            config['encoder_topic'] = f'/uas{number}/gimbal_encoder/joint_states'
         if bench and file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):
             config['bench_base_altitude'] = 20.0
         if file_name == (SIM_VEHICLE_CONFIG if sim else VEHICLE_CONFIG):

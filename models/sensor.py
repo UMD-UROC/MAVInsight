@@ -1,6 +1,8 @@
 # python imports
 from __future__ import annotations
 
+from collections import deque
+import json
 import numpy as np
 from typing import Optional
 from scipy.spatial.transform import Rotation as R
@@ -10,8 +12,8 @@ import mavros_msgs.msg
 from cdcl_umd_msgs.msg import FiducialCalibration
 from geometry_msgs.msg import Quaternion, Transform, TransformStamped, Vector3
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Range
-from std_msgs.msg import Header
+from sensor_msgs.msg import Range, JointState
+from std_msgs.msg import Header, String
 
 # ROS imports
 from rclpy.duration import Duration
@@ -23,7 +25,7 @@ from tf2_ros import Buffer, TransformListener
 from mavinsight.localization_reference import StateHistory, stamp_ns
 from models.frame_member import FrameMember
 from models.frame_utils import R_cam_flu, euler_2_quat, frd_2_flu, frd_ned_2_flu_enu, rot_2_quat
-from models.gimbal_frame import without_reported_yaw
+from models.gimbal_frame import without_reported_yaw, encoder_rotation, reported_roll_pitch
 from models.qos_profiles import viz_qos, latched_reliable_qos
 from models.sensor_types import SensorTypes
 
@@ -272,6 +274,18 @@ class Gimbal(Sensor):
         self.tf_buffer = Buffer(Duration(seconds=5))
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
+        self.ENCODER_ENABLED = bool(self.get_parameter('encoder_enabled').value
+                                    if self.has_parameter('encoder_enabled') else False)
+        if self.ENCODER_ENABLED:
+            self.ENCODER_HAS_YAW_AXIS = bool(self.get_parameter('encoder_has_yaw_axis').value)
+            self.create_subscription(JointState, self.get_parameter('encoder_topic').value,
+                                     self.publish_encoder, viz_qos)
+            self._encoder_pending = deque(maxlen=100)
+            self._encoder_comparison = self.create_publisher(
+                String, '/' + self.FRAME_NAME.split('_gimbal')[0]
+                + '/gimbal_encoder/comparison', viz_qos)
+            self.create_timer(.1, self.compare_encoder)
+
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Gimbal initialized!")
 
     def publish_orientation(self, msg : mavros_msgs.msg.GimbalDeviceAttitudeStatus):
@@ -287,6 +301,7 @@ class Gimbal(Sensor):
         # construct gimbal attitude frame
         R_ref_g_FRD = R.from_quat([msg.q.x, msg.q.y, msg.q.z, msg.q.w])
         R_ref_g = frd_2_flu(R_ref_g_FRD)
+        full_reported = reported_roll_pitch(R_ref_g) if self.IGNORE_REPORTED_YAW else R_ref_g
         if self.IGNORE_REPORTED_YAW:
             R_ref_g = without_reported_yaw(R_ref_g)
         nominal_tf = TransformStamped(
@@ -307,6 +322,71 @@ class Gimbal(Sensor):
             transform = Transform(rotation=q_ref_g_FLU)
         )
         self.tf_broadcaster.sendTransform([nominal_tf, gimbal_tf])
+        if getattr(self, 'ENCODER_ENABLED', False):
+            self.tf_broadcaster.sendTransform(TransformStamped(
+                header=Header(stamp=msg.header.stamp, frame_id=self.GIMBAL_REF_FRAME_NAME),
+                child_frame_id=f'{self.FRAME_NAME}_reported_full',
+                transform=Transform(rotation=rot_2_quat(full_reported * calibration))))
+
+    def publish_encoder(self, msg: JointState):
+        if (msg.header.frame_id != self.PARENT_FRAME or len(msg.name) != len(msg.position)
+                or len(set(msg.name)) != len(msg.name)):
+            return
+        positions = dict(zip(msg.name, msg.position))
+        if not all(name in positions and np.isfinite(positions[name]) for name in ('pitch','roll')):
+            return
+        yaw = 0.0
+        if getattr(self, 'ENCODER_HAS_YAW_AXIS', False):
+            if 'yaw' not in positions or not np.isfinite(positions['yaw']):
+                return
+            yaw = positions['yaw']
+        nominal = encoder_rotation(positions['pitch'], positions['roll'], yaw)
+        calibration = self._calibration_history.at(stamp_ns(msg.header.stamp))
+        transforms = [TransformStamped(
+            header=Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME),
+            child_frame_id=f'{self.FRAME_NAME}_{suffix}',
+            transform=Transform(rotation=rot_2_quat(rotation)))
+            for suffix,rotation in [('encoder_nominal',nominal),('encoder',nominal*calibration)]]
+        self.tf_broadcaster.sendTransform(transforms)
+        self._encoder_pending.append(msg.header.stamp)
+
+    def compare_encoder(self):
+        # Wait for the slower body/reported TF streams to cover each encoder
+        # timestamp. Never compare to an arbitrary latest body/world pose.
+        from tf2_ros import TransformException
+        while self._encoder_pending:
+            stamp = self._encoder_pending[0]
+            t = Time.from_msg(stamp)
+            try:
+                comparison = self.tf_buffer.lookup_transform(
+                    f'{self.FRAME_NAME}_reported_full', f'{self.FRAME_NAME}_encoder',t)
+                body = self.tf_buffer.lookup_transform(
+                    self.PARENT_FRAME,f'{self.FRAME_NAME}_encoder',t)
+                reference = self.tf_buffer.lookup_transform(
+                    self.PARENT_FRAME,self.GIMBAL_REF_FRAME_NAME,t)
+            except TransformException:
+                if stamp_ns(self.get_clock().now().to_msg())-stamp_ns(stamp) > 2_000_000_000:
+                    self._encoder_pending.popleft()
+                    continue
+                break
+            self._encoder_pending.popleft()
+            def quaternion(transform):
+                q = transform.transform.rotation
+                return [q.x,q.y,q.z,q.w]
+            delta = R.from_quat(quaternion(comparison))
+            # Includes calibration; retains both body-relative joint pose and
+            # the drone-derived level reference rather than zeroing either.
+            self._encoder_comparison.publish(String(data=json.dumps({
+                'stamp': {'sec':stamp.sec,'nanosec':stamp.nanosec},
+                'reported_frame': f'{self.FRAME_NAME}_reported_full',
+                'encoder_frame': f'{self.FRAME_NAME}_encoder',
+                'reported_to_encoder_xyzw': quaternion(comparison),
+                'angular_disagreement_deg': float(np.rad2deg(delta.magnitude())),
+                'rotation_vector_deg': np.rad2deg(delta.as_rotvec()).tolist(),
+                'mount_to_encoder_xyzw': quaternion(body),
+                'mount_to_gimbal_reference_xyzw': quaternion(reference),
+                'comparison_basis': 'same TF timestamp, body-mounted encoders vs drone-derived level and gimbal report',
+            })))
 
     def update_calibration(self, msg: FiducialCalibration):
         if msg.gimbal_frame != self.FRAME_NAME:

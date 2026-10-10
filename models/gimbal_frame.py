@@ -15,6 +15,29 @@ LOCK_FLAGS = FLAGS_ROLL_LOCK | FLAGS_PITCH_LOCK | FLAGS_YAW_LOCK
 EARTH_NORTH_IN_ENU = R.from_euler("Z", 90.0, degrees=True)
 
 
+def encoder_rotation(pitch: float, roll: float, yaw: float = 0.0) -> R:
+    """ROS FLU radians: outer yaw, then roll, then inner pitch.
+
+    V2 has no yaw joint: yaw=0 locks its mechanical heading to the body.
+    """
+    return R.from_euler('z', yaw) * R.from_euler('x', roll) * R.from_euler('y', pitch)
+
+
+def reported_roll_pitch(attitude: R) -> R:
+    """Remove v2's non-actuated reported yaw, retaining measured roll/pitch.
+
+    MAVLink uses extrinsic xyz with report yaw. At the pitch pole, roll/yaw
+    cannot be separated; the original quaternion remains on the MAVROS topic.
+    """
+    # scipy's xyz decomposition preserves the report convention used by
+    # MAVROS; at the pole roll/yaw are ambiguous, so this is diagnostic only.
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        roll, pitch, _ = attitude.as_euler('xyz')
+    return R.from_euler('xyz', [roll, pitch, 0.0])
+
+
 def yaw_is_earth_referenced(flags: int) -> bool:
     """Prefer explicit MAVLink yaw-frame flags over the legacy lock bit."""
     explicit_earth_frame = bool(flags & FLAGS_YAW_IN_EARTH_FRAME)
