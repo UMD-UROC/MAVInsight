@@ -63,3 +63,20 @@ def test_late_attitude_uses_calibration_active_at_measurement_time():
     Gimbal.publish_orientation(g,msg)
     q=received[-1][1].transform.rotation
     np.testing.assert_allclose(R.from_quat([q.x,q.y,q.z,q.w]).as_matrix(),g._calibration_rotation.as_matrix())
+
+
+def test_encoder_calibration_is_separate_from_fused_and_time_specific():
+    from mavinsight.localization_reference import StateHistory
+    g=SimpleNamespace(FRAME_NAME='uas3_gimbal_frame',_calibration_history=StateHistory())
+    g._calibration_history.add(0,R.identity())
+    p=packet();p.gimbal_frame+='_'+'encoder';p.header.stamp.sec=3
+    Gimbal.update_calibration(g,p)
+    np.testing.assert_allclose(g._calibration_history.at().as_matrix(),np.eye(3))
+    np.testing.assert_allclose(g._encoder_calibration_history.at(2_000_000_000).as_matrix(),np.eye(3))
+    q=p.sensor_rotation
+    np.testing.assert_allclose(g._encoder_calibration_history.at(4_000_000_000).as_matrix(),
+                              R.from_quat([q.x,q.y,q.z,q.w]).as_matrix())
+    encoder=g._encoder_calibration_history.at().as_matrix().copy()
+    p=packet();p.sensor_rotation.w=1.;p.sensor_rotation.x=p.sensor_rotation.y=p.sensor_rotation.z=0.
+    Gimbal.update_calibration(g,p)
+    np.testing.assert_allclose(g._encoder_calibration_history.at().as_matrix(),encoder)

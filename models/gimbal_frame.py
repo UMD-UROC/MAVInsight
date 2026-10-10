@@ -15,6 +15,17 @@ LOCK_FLAGS = FLAGS_ROLL_LOCK | FLAGS_PITCH_LOCK | FLAGS_YAW_LOCK
 EARTH_NORTH_IN_ENU = R.from_euler("Z", 90.0, degrees=True)
 
 
+def resolve_gimbal_pose_source(source: str, encoder_available: bool) -> str:
+    """Select encoders when present; keep telemetry-free ground/sim trees usable."""
+    if source not in ('auto', 'encoder', 'fused'):
+        raise ValueError('gimbal_pose_source must be auto, encoder, or fused')
+    if source == 'auto':
+        return 'encoder' if encoder_available else 'fused'
+    if source == 'encoder' and not encoder_available:
+        raise ValueError('gimbal_pose_source=encoder requires encoder telemetry')
+    return source
+
+
 def encoder_rotation(pitch: float, roll: float, yaw: float = 0.0) -> R:
     """ROS FLU radians: outer yaw, then roll, then inner pitch.
 

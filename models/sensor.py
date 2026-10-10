@@ -258,6 +258,8 @@ class Gimbal(Sensor):
         self._calibration_rotation = R.identity()
         self._calibration_history = StateHistory()
         self._calibration_history.add(0, R.identity())
+        self._encoder_calibration_history = StateHistory()
+        self._encoder_calibration_history.add(0, R.identity())
         topic = ('/' + self.FRAME_NAME.split('_gimbal')[0]
                  + '/fiducial_calibration/update')
         self.create_subscription(FiducialCalibration, topic,
@@ -341,7 +343,7 @@ class Gimbal(Sensor):
                 return
             yaw = positions['yaw']
         nominal = encoder_rotation(positions['pitch'], positions['roll'], yaw)
-        calibration = self._calibration_history.at(stamp_ns(msg.header.stamp))
+        calibration = self._encoder_calibration_history.at(stamp_ns(msg.header.stamp))
         transforms = [TransformStamped(
             header=Header(stamp=msg.header.stamp, frame_id=self.PARENT_FRAME),
             child_frame_id=f'{self.FRAME_NAME}_{suffix}',
@@ -389,18 +391,25 @@ class Gimbal(Sensor):
             })))
 
     def update_calibration(self, msg: FiducialCalibration):
-        if msg.gimbal_frame != self.FRAME_NAME:
+        if msg.gimbal_frame not in (self.FRAME_NAME, self.FRAME_NAME + '_encoder'):
             return
         q = msg.sensor_rotation
         values = np.array([q.x, q.y, q.z, q.w])
         if not np.all(np.isfinite(values)) or abs(np.linalg.norm(values)-1) > 1e-3:
             self.get_logger().error('invalid fiducial sensor rotation ignored')
             return
-        if not hasattr(self, '_calibration_history'):
-            self._calibration_history = StateHistory()
-            self._calibration_history.add(0, R.identity())
-        self._calibration_history.add(stamp_ns(msg.header.stamp), R.from_quat(values))
-        self._calibration_rotation = self._calibration_history.at()
+        # Corrections are measured against one pose source. Do not transfer a
+        # fused correction to encoders (or an encoder correction to fused).
+        attribute = ('_encoder_calibration_history' if msg.gimbal_frame.endswith('_encoder')
+                     else '_calibration_history')
+        if not hasattr(self, attribute):
+            history = StateHistory()
+            history.add(0, R.identity())
+            setattr(self, attribute, history)
+        history = getattr(self, attribute)
+        history.add(stamp_ns(msg.header.stamp), R.from_quat(values))
+        if attribute == '_calibration_history':
+            self._calibration_rotation = history.at()
 
     # A _commanded_attitude frame used to be published here from
     # GimbalManagerSetAttitude. That message carries no header, so every

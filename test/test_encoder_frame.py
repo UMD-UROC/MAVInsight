@@ -48,7 +48,7 @@ def test_encoder_uses_existing_mount_and_time_specific_calibration():
     correction = R.from_euler('z',3,degrees=True)
     history.add(3_000_000_000,correction)
     g = SimpleNamespace(FRAME_NAME='uas3_gimbal_frame',PARENT_FRAME='uas3_gimbal_frame_offset',
-                        _calibration_history=history,_encoder_pending=deque(),
+                        _encoder_calibration_history=history,_encoder_pending=deque(),
                         tf_broadcaster=SimpleNamespace(sendTransform=received.append))
     msg = JointState()
     msg.header.frame_id = g.PARENT_FRAME

@@ -19,6 +19,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from models.gimbal_frame import resolve_gimbal_pose_source
 
 PACKAGE = 'mavinsight'
 NAMESPACE = 'viz'
@@ -45,6 +46,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'gimbal_encoder', default_value='false', choices=['true', 'false'],
             description='Publish measured encoder and full reported comparison frames.'),
+        DeclareLaunchArgument(
+            'gimbal_pose_source', default_value='auto', choices=['auto', 'encoder', 'fused'],
+            description='Camera/laser pose: encoders when available, or legacy fused attitude.'),
         DeclareLaunchArgument(
             'bench', default_value='false', choices=['true', 'false'],
             description='Place the bench vehicle 20 m above its home frame.'),
@@ -91,12 +95,14 @@ def frame_tree(context, *args, **kwargs):
         number, model, camera=camera, sim=sim, bench=bench,
         publish_fiducial_edge=publish_fiducial_edge, fiducial_lla=fiducial_lla,
         camera_rotation=camera_rotation, localization_reference_topic=reference_topic,
-        gimbal_encoder=encoder_enabled)]
+        gimbal_encoder=encoder_enabled,
+        gimbal_pose_source=LaunchConfiguration('gimbal_pose_source').perform(context))]
 
 
 def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
                   publish_fiducial_edge=True, fiducial_lla='', camera_rotation=None,
-                  localization_reference_topic='', gimbal_encoder=False):
+                  localization_reference_topic='', gimbal_encoder=False,
+                  gimbal_pose_source='auto'):
     """Build the same named TF-node configurations for live launch and bag replay.
 
     Replay writes these dictionaries to parameter files with use_sim_time set
@@ -104,6 +110,7 @@ def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
     """
     if camera not in ('rgb', 'thermal') or model not in ('v2', 'v3'):
         raise ValueError('invalid camera or airframe model')
+    pose_source = resolve_gimbal_pose_source(gimbal_pose_source, gimbal_encoder)
     camera_rotation = [0.0, 0.0, 0.0] if camera_rotation is None else camera_rotation
     if len(camera_rotation) != 3 or not all(math.isfinite(v) for v in camera_rotation):
         raise ValueError('camera_mount_rotation_deg requires three finite Euler xyz angles')
@@ -120,6 +127,10 @@ def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
         built.add(file_name)
 
         config = load(resources / file_name, number)
+        if config.get('parent_frame') == f'uas{number}_gimbal_frame' and pose_source == 'encoder':
+            # Preserve the camera/optical/laser leaf names: all consumers use
+            # the selected pose without building a second sensor subtree.
+            config['parent_frame'] += '_encoder'
         if file_name in ('gimbal_rgb_camera.yaml', 'sim_gimbal_rgb_camera.yaml'):
             # The active camera retains the rgb frame names for downstream
             # localization and Foxglove. Its intrinsics and mount must both
