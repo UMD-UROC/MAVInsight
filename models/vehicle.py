@@ -534,7 +534,8 @@ class Vehicle(FrameMember):
 
         # The home offset rides the pose rate so that it has a real time extent.
         # home_cb also sends once immediately to connect the tree at startup.
-        if self.publish_fiducial_edge and self.home_t is not None:
+        # This vehicle owns HOME -> EKF even when fleet_tf owns the root edges.
+        if self.home_t is not None:
             state = self._reference_state(head_out.stamp)
             if state is not None:
                 tfs.append(TransformStamped(
@@ -691,8 +692,7 @@ class Vehicle(FrameMember):
             child_frame_id=self.EKF_FRAME,
             transform=Transform(translation=Vector3(
                 x=state.ekf_offset[0], y=state.ekf_offset[1], z=state.ekf_offset[2])))
-        if self.publish_fiducial_edge:
-            self.tf_broadcaster.sendTransform(self._root_tfs(stamp) + [self.home_t])
+        self.tf_broadcaster.sendTransform(self._root_tfs(stamp) + [self.home_t])
         self._publish_reference(stamp)
         lat, lon, alt = state.frame_anchor(self.EKF_FRAME, corrected=False)
         self.ekf_fix_pub.publish(NavSatFix(

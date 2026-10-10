@@ -1,6 +1,7 @@
 """Raw GPS placement and fiducial correction remain separate TF edges."""
 
 import pymap3d as pm
+import pytest
 
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import TransformStamped, Vector3
@@ -60,7 +61,8 @@ def test_vehicle_composes_raw_home_and_correction_as_separate_edges():
     assert correction_edge.header.stamp.sec == 20
 
 
-def test_vehicle_home_callback_keeps_application_anchor_and_complete_chain(monkeypatch):
+@pytest.mark.parametrize('publish_root_edges', [True, False])
+def test_vehicle_home_callback_keeps_application_anchor_and_complete_chain(monkeypatch, publish_root_edges):
     from copy import deepcopy
     from types import SimpleNamespace
     import pytest
@@ -77,7 +79,11 @@ def test_vehicle_home_callback_keeps_application_anchor_and_complete_chain(monke
     v._fiducial_correction = Vector3(x=1., y=-2., z=.5)
     v.raw_home_t = TransformStamped()
     v.correction_t = TransformStamped()
-    v.publish_fiducial_edge = True
+    v.raw_home_t.header.frame_id = v.FIDUCIAL_FRAME
+    v.raw_home_t.child_frame_id = v.UNCORRECTED_HOME_FRAME
+    v.correction_t.header.frame_id = v.UNCORRECTED_HOME_FRAME
+    v.correction_t.child_frame_id = v.HOME_FRAME
+    v.publish_fiducial_edge = publish_root_edges
     v.external_reference_topic = ''
     v.localization_reference = LocalizationReference()
     v.localization_reference.update_correction(0, (1., -2., .5))
@@ -98,6 +104,34 @@ def test_vehicle_home_callback_keeps_application_anchor_and_complete_chain(monke
     assert fixes[-1].altitude == fixes[0].altitude == 22.
     assert states[-1].ekf_offset == pytest.approx(states[0].ekf_offset, abs=1e-8)
     for edges in sent:
-        assert len(edges) == 3
+        assert len(edges) == (3 if publish_root_edges else 1)
         assert len({(e.header.stamp.sec, e.header.stamp.nanosec) for e in edges}) == 1
     assert sent[-1][-1].transform.translation.z == pytest.approx(5.)
+
+    # Ground must refresh HOME -> EKF at pose rate, while fleet_tf remains
+    # the sole publisher of the raw-home and fiducial correction edges.
+    from geometry_msgs.msg import PoseStamped
+    from scipy.spatial.transform import Rotation as R
+    v.PARENT_FRAME = v.EKF_FRAME
+    v.FRAME_NAME = 'uas4_base_link'
+    v.VELOCITY = v.ALTITUDE = None
+    v.BENCH_BASE_ALTITUDE = float('nan')
+    v.last_drone_pos = None
+    v.path = SimpleNamespace(add=lambda x: None)
+    v.gimbal_flags = 0
+    v.GIMBAL_HAS_YAW_AXIS = False
+    v.gimbal_reference_apply_stabilization_correction = True
+    v.gimbal_reference_yaw_is_earth = None
+    v.gimbal_reference_rotation = R.identity()
+    v.gimbal_offset_frame = 'uas4_gimbal_frame_offset'
+    v.gimbal_ref_frame = 'uas4_gimbal_frame_ref'
+    pose = PoseStamped()
+    pose.header.stamp.sec = 3
+    pose.pose.orientation.w = 1.
+    v.publish_position(pose)
+    ekf_edge = next(e for e in sent[-1] if e.child_frame_id == v.EKF_FRAME)
+    assert ekf_edge.header.frame_id == v.HOME_FRAME
+    assert ekf_edge.header.stamp.sec == 3
+    assert ekf_edge.transform.translation.z == pytest.approx(5.)
+    root_children = {v.HOME_FRAME, v.UNCORRECTED_HOME_FRAME}
+    assert bool(root_children & {e.child_frame_id for e in sent[-1]}) == publish_root_edges
