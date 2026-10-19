@@ -48,7 +48,8 @@ setup(
             "scoring_viz = models.scoring_viz:ScoringViz.main",
             "buildings_viz = models.buildings_viz:BuildingsViz.main",
             "terrain_viz = models.terrain_viz:TerrainViz.main",
-            "location_viz = models.location_viz:LocationViz.main"
+            "location_viz = models.location_viz:LocationViz.main",
+            "spot_viz = mavinsight.spot_frames:main"
         ],
     },
 )
