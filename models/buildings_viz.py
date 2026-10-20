@@ -406,11 +406,12 @@ class BuildingsViz(GraphMember):
         # The mtime the held model was built from. No file has been read yet,
         # and an mtime never takes this value.
         self.model_stamp = 0
-        self.mosaic = None
+        self.mosaics = {}
         self.mosaic_drawn = None
 
-        if mosaic_topic:
-            self.create_subscription(MosaicOverlay, mosaic_topic, self.mosaic_cb, LIVE_QOS)
+        for topic in filter(None, mosaic_topic.split(',')):
+            self.create_subscription(MosaicOverlay, topic,
+                                     lambda msg, t=topic: self.mosaic_cb(msg, t), LIVE_QOS)
             self.get_logger().info(
                 f"[{self.DISPLAY_NAME}]: the vehicle's map is drawn over building surfaces from {mosaic_topic}")
 
@@ -427,9 +428,9 @@ class BuildingsViz(GraphMember):
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Buildings visualization initialized!")
 
-    def mosaic_cb(self, msg: MosaicOverlay) -> None:
+    def mosaic_cb(self, msg: MosaicOverlay, topic="") -> None:
         """Hold the newest map; the timer coalesces bursts into one model rebuild."""
-        self.mosaic = msg
+        self.mosaics[topic] = msg
 
     def publish_when_changed(self) -> None:
         """Draw the scene again when its file changes, and when the ground it
@@ -440,8 +441,7 @@ class BuildingsViz(GraphMember):
             stamp = self.path.stat().st_mtime_ns
         except OSError:
             stamp = None
-        mosaic_stamp = None if self.mosaic is None else (
-            self.mosaic.header.stamp.sec, self.mosaic.header.stamp.nanosec)
+        mosaic_stamp = tuple((topic, id(msg)) for topic, msg in sorted(self.mosaics.items()))
         if stamp != self.model_stamp or mosaic_stamp != self.mosaic_drawn:
             self.model_stamp = stamp
             self.mosaic_drawn = mosaic_stamp
@@ -481,10 +481,11 @@ class BuildingsViz(GraphMember):
             else:
                 base = source
         note = ""
-        if self.mosaic is not None:
+        if self.mosaics:
             try:
                 drawn, box, covered = composite_overlay(
-                    base, self.mosaic, self.scene_origin_lla, positions, uvs)
+                    base, self.mosaics,
+                    self.scene_origin_lla, positions, uvs)
                 if box is not None:
                     base = drawn
                     note = f", vehicle map over {covered * 100.0:.1f}% of the roof texture"
@@ -508,10 +509,10 @@ class BuildingsViz(GraphMember):
         """
         raster = (max(Image.open(self.texture_path).size)
                   if self.texture_path and self.texture_path.is_file() else 1)
-        if self.mosaic is not None and self.scene_origin_lla is not None:
-            box = overlay_box_enu(self.mosaic, self.scene_origin_lla)
-            if box is not None and self.mosaic.width_px > 1:
-                per_px = (box[2] - box[0]) / (self.mosaic.width_px - 1)
+        for mosaic in self.mosaics.values():
+            box = overlay_box_enu(mosaic, self.scene_origin_lla)
+            if box is not None and mosaic.width_px > 1:
+                per_px = (box[2] - box[0]) / (mosaic.width_px - 1)
                 if per_px > 0.0:
                     raster = max(raster, int(round(self.side_m / per_px)))
         return min(self.texture_px, raster)
