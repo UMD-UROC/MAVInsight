@@ -10,11 +10,6 @@ from models.scene_ground import as_fix
 
 def overlay_box_enu(overlay, scene_origin_lla):
     """Return overlay bounds (west, south, east, north) in scene-centre ENU."""
-    if isinstance(overlay, dict):
-        boxes = [box for item in overlay.values()
-                 if (box := overlay_box_enu(item, scene_origin_lla)) is not None]
-        return ((min(b[0] for b in boxes), min(b[1] for b in boxes),
-                 max(b[2] for b in boxes), max(b[3] for b in boxes)) if boxes else None)
     if overlay is None or scene_origin_lla is None:
         return None
     anchor = as_fix((scene_origin_lla[0], scene_origin_lla[1], 0.0))
@@ -60,13 +55,6 @@ def composite_overlay(base, overlay_msg, scene_origin_lla, positions, uvs):
     encoded overlay cannot be decoded. A None box means the overlay cannot be
     georeferenced against this scene.
     """
-    if isinstance(overlay_msg, dict):
-        covered = 0.0
-        for _, overlay in sorted(overlay_msg.items()):
-            base, _, fraction = composite_overlay(
-                base, overlay, scene_origin_lla, positions, uvs)
-            covered = max(covered, fraction)
-        return base, overlay_box_enu(overlay_msg, scene_origin_lla), covered
     box = overlay_box_enu(overlay_msg, scene_origin_lla)
     if box is None:
         return base, None, 0.0
