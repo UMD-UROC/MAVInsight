@@ -12,6 +12,61 @@ VEHICLE_CONFIG = 'chimera.yaml'
 SIM_VEHICLE_CONFIG = 'sim_vehicle.yaml'
 
 
+def localization_dynamic_edges(members, frames):
+    """Required dynamic edges on the configured localization and anchor paths.
+
+    Include the rangefinder even though ordinary ground localization can work
+    without it. Do not include auxiliary telemetry/calibration/altitude planes.
+    """
+    parents = {}
+    dynamic = set()
+
+    def add(parent, child, *, is_static=False):
+        if child in parents and parents[child] != parent:
+            raise ValueError(f'Multiple parents for localization frame {child}')
+        parents[child] = parent
+        if not is_static:
+            dynamic.add((parent, child))
+
+    for _, config in members:
+        frame, parent = config['frame_name'], config['parent_frame']
+        if 'ekf_origin_frame' in config:
+            if config.get('publish_fiducial_edge', True):
+                add(config['fiducial_frame'], config['uncorrected_home_frame_name'])
+                add(config['uncorrected_home_frame_name'], config['home_frame_name'])
+            add(config['home_frame_name'], config['ekf_origin_frame'])
+            add(parent, frame)
+            add(config['gimbal_offset_frame'], config['gimbal_ref_frame'])
+            continue
+        if config.get('offset'):
+            add(parent, frame + '_offset', is_static=True)
+            parent = frame + '_offset'
+        if config.get('sensor_type') == 'gimbal':
+            add(frame + '_ref', frame)
+            if config.get('encoder_enabled'):
+                add(parent, frame + '_encoder')
+        elif config.get('sensor_type') == 'rangefinder':
+            add(parent, frame)
+        elif config.get('sensor_type') == 'camera':
+            add(parent, frame + '_optical', is_static=True)
+
+    root = frames['localization_fiducial_frame']
+    required = set()
+    for key in ('localization_origin_frame', 'localization_uncorrected_origin_frame',
+                'drone_frame', 'camera_frame', 'gimbal_frame', 'rangefinder_frame'):
+        child = frames[key]
+        visited = set()
+        while child != root:
+            if child in visited or child not in parents:
+                raise ValueError(f'No configured localization TF path from {root} to {frames[key]}')
+            visited.add(child)
+            parent = parents[child]
+            if (parent, child) in dynamic:
+                required.add((parent, child))
+            child = parent
+    return sorted(required)
+
+
 def dynamic_frame_owners(members, namespace='/viz'):
     """Map possible dynamic child frames to their configured publishing nodes.
 
