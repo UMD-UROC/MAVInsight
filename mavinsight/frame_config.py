@@ -12,6 +12,36 @@ VEHICLE_CONFIG = 'chimera.yaml'
 SIM_VEHICLE_CONFIG = 'sim_vehicle.yaml'
 
 
+def dynamic_frame_owners(members, namespace='/viz'):
+    """Map possible dynamic child frames to their configured publishing nodes.
+
+    Optional edges become monitored only once observed. Camera mounts and
+    optical frames are static and therefore excluded.
+    """
+    owners = {}
+    for name, config in members:
+        frame = config['frame_name']
+        sensor_type = config.get('sensor_type')
+        children = []
+        if sensor_type == 'gimbal':
+            children = [frame, frame + '_uncorrected']
+            if config.get('encoder_enabled'):
+                children += [frame + suffix for suffix in (
+                    '_reported_full', '_encoder', '_encoder_uncorrected')]
+        elif sensor_type == 'rangefinder':
+            children = [frame]
+        elif 'ekf_origin_frame' in config:  # Vehicle owns body and reference edges.
+            children = [frame, frame + '_alt_plane', config['ekf_origin_frame'],
+                        config['gimbal_ref_frame']]
+            if config.get('publish_fiducial_edge', True):
+                children += [config['home_frame_name'], config['uncorrected_home_frame_name']]
+        for child in children:
+            if child in owners:
+                raise ValueError(f'Multiple MAVInsight nodes own dynamic frame {child}')
+            owners[child] = namespace.rstrip('/') + '/' + name
+    return owners
+
+
 def frame_configs(number, model, *, camera='rgb', sim=False, bench=False,
                   publish_fiducial_edge=True, fiducial_lla='', camera_rotation=None,
                   localization_reference_topic='', gimbal_encoder=False,
