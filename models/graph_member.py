@@ -3,6 +3,7 @@ import time
 
 # ROS2 imports
 import rclpy
+from mavinsight.heartbeat import start_heartbeat
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
@@ -69,6 +70,7 @@ class GraphMember(Node):
     def main(cls, args=None):
         rclpy.init(args=args)
         node = cls()
+        start_heartbeat(node)
 
         executor = MultiThreadedExecutor(num_threads=2)
         executor.add_node(node)
