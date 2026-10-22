@@ -181,12 +181,12 @@ class TerrainViz(GraphMember):
         # The newest mosaic, and the one the held model was drawn with. A
         # stamp identifies a map here; two maps of the same ground at the same
         # moment are the same map.
-        self.mosaics = {}
+        self.mosaic = None
         self.mosaic_drawn = None
 
-        for topic in filter(None, mosaic_topic.split(',')):
-            self.create_subscription(MosaicOverlay, topic,
-                                     lambda msg, t=topic: self.mosaic_cb(msg, t), LIVE_QOS)
+        if mosaic_topic:
+            self.create_subscription(MosaicOverlay, mosaic_topic,
+                                     self.mosaic_cb, LIVE_QOS)
             self.get_logger().info(
                 f"[{self.DISPLAY_NAME}]: the vehicle's map is drawn into the "
                 f"terrain from {mosaic_topic}")
@@ -203,10 +203,10 @@ class TerrainViz(GraphMember):
 
         self.get_logger().info(f"[{self.DISPLAY_NAME}]: Terrain visualization initialized!")
 
-    def mosaic_cb(self, msg: MosaicOverlay, topic="") -> None:
+    def mosaic_cb(self, msg: MosaicOverlay) -> None:
         """Hold the newest map. It is drawn in on the next tick, so a burst of
         captures costs one rebuild rather than one for each."""
-        self.mosaics[topic] = msg
+        self.mosaic = msg
 
     def publish_when_changed(self) -> None:
         """Draw the scene again when its mesh changes, when the vehicle's map
@@ -217,7 +217,8 @@ class TerrainViz(GraphMember):
             stamp = None if self.mesh_path is None else self.mesh_path.stat().st_mtime_ns
         except OSError:
             stamp = None
-        mosaic_stamp = tuple((topic, id(msg)) for topic, msg in sorted(self.mosaics.items()))
+        mosaic_stamp = None if self.mosaic is None else (
+            self.mosaic.header.stamp.sec, self.mosaic.header.stamp.nanosec)
         if stamp != self.model_stamp or mosaic_stamp != self.mosaic_drawn:
             self.model_stamp = stamp
             self.mosaic_drawn = mosaic_stamp
@@ -268,7 +269,7 @@ class TerrainViz(GraphMember):
             self.base_image = image.convert("RGB")
             self.base_px = wanted
         image, note = self.base_image, ""
-        if self.mosaics:
+        if self.mosaic is not None:
             image, note = self.with_mosaic(self.base_image, positions, uvs)
         packed = io.BytesIO()
         image.save(packed, "JPEG", quality=88)
@@ -276,8 +277,8 @@ class TerrainViz(GraphMember):
 
     def mosaic_box(self):
         """The live overlay bounds in this scene's ENU coordinates."""
-        box = overlay_box_enu(self.mosaics, self.scene_origin_lla)
-        if box is None and self.mosaics and self.scene_origin_lla is not None:
+        box = overlay_box_enu(self.mosaic, self.scene_origin_lla)
+        if box is None and self.mosaic is not None and self.scene_origin_lla is not None:
             self.get_logger().warn(
                 "the mosaic's corners do not make a valid scene box, so it is not drawn",
                 throttle_duration_sec=30.0)
@@ -294,21 +295,19 @@ class TerrainViz(GraphMember):
         costs.
         """
         raster = max(Image.open(self.texture_path).size)
-        for mosaic in self.mosaics.values():
-            box = overlay_box_enu(mosaic, self.scene_origin_lla)
-            if box is not None and mosaic.width_px > 1:
-                per_px = (box[2] - box[0]) / (mosaic.width_px - 1)
-                side = float(np.max(positions[..., 0]) - np.min(positions[..., 0]))
-                if per_px > 0.0:
-                    raster = max(raster, int(round(side / per_px)))
+        box = self.mosaic_box()
+        if box is not None and self.mosaic.width_px > 1:
+            per_px = (box[2] - box[0]) / (self.mosaic.width_px - 1)
+            side = float(np.max(positions[..., 0]) - np.min(positions[..., 0]))
+            if per_px > 0.0:
+                raster = max(raster, int(round(side / per_px)))
         return min(self.texture_px, raster)
 
     def with_mosaic(self, base, positions, uvs):
         """Drape the live map with the shared scene-texture implementation."""
         try:
             drawn, box, covered = composite_overlay(
-                base, self.mosaics,
-                self.scene_origin_lla, positions, uvs)
+                base, self.mosaic, self.scene_origin_lla, positions, uvs)
         except (OSError, ValueError) as error:
             self.get_logger().warn(f"cannot read the mosaic overlay: {error}",
                                    throttle_duration_sec=30.0)
@@ -317,7 +316,8 @@ class TerrainViz(GraphMember):
             return base, ""
         west, south, east, north = box
         return drawn, (f", the vehicle's map over {covered * 100.0:.1f}% of it "
-                       f"({east - west:.0f}x{north - south:.0f} m)")
+                       f"({self.mosaic.width_px}x{self.mosaic.height_px} px, "
+                       f"{east - west:.0f}x{north - south:.0f} m)")
 
     def build_model(self) -> bool:
         """Read the mesh and its image and hold them as one textured model, in
@@ -369,14 +369,13 @@ class TerrainViz(GraphMember):
         quad lies on it and the map's own bounds georeference it.
         """
         self.scene_origin_lla = None
-        if not self.mosaics or self.ground.local_fix is None:
+        if self.mosaic is None or self.ground.local_fix is None:
             return False
         # The plane sits at the height the fix reports, and `anchor` puts the
         # scene centre back in that datum by adding the geoid height on.
-        mosaic = next(iter(self.mosaics.values()))
         self.scene_origin_lla = [
-            (mosaic.sw_lat + mosaic.ne_lat) / 2.0,
-            (mosaic.sw_lon + mosaic.ne_lon) / 2.0,
+            (self.mosaic.sw_lat + self.mosaic.ne_lat) / 2.0,
+            (self.mosaic.sw_lon + self.mosaic.ne_lon) / 2.0,
             self.ground.local_fix.altitude - self.geoid_height]
         box = self.mosaic_box()
         if box is None:
@@ -409,15 +408,15 @@ class TerrainViz(GraphMember):
         onto black here rather than out as transparency. `terrain_texture_px`
         caps the width the same way it caps a scene's.
         """
-        west, south, east, north = self.mosaic_box()
-        positions = np.array([[west, south, 0.0], [east, south, 0.0],
-                              [east, north, 0.0], [west, north, 0.0]])
-        uvs = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
-        size = (min(self.texture_px, max(m.width_px for m in self.mosaics.values())),
-                min(self.texture_px, max(m.height_px for m in self.mosaics.values())))
-        picture, _, _ = composite_overlay(
-            Image.new("RGB", size), self.mosaics,
-            self.scene_origin_lla, positions, uvs)
+        overlay = Image.open(io.BytesIO(bytes(self.mosaic.overlay_png.data)))
+        overlay = overlay.convert("RGBA")
+        if max(overlay.size) > self.texture_px:
+            scale = self.texture_px / max(overlay.size)
+            overlay = overlay.resize((max(1, round(overlay.width * scale)),
+                                      max(1, round(overlay.height * scale))),
+                                     Image.BICUBIC)
+        picture = Image.new("RGB", overlay.size)
+        picture.paste(overlay, (0, 0), overlay)
         packed = io.BytesIO()
         picture.save(packed, "JPEG", quality=88)
         return packed.getvalue(), picture.size
