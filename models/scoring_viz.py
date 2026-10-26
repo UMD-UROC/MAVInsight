@@ -760,8 +760,7 @@ class ScoringViz(GraphMember):
             center = box.target_bbox.center.position
             boxes.append(Box(
                 verdict_id=f"{box.data_source_id}_{index}",
-                label=annotation_text(box.detection_class or "object",
-                                      str(box.data_source_id)),
+                label=f"{box.data_source_id}: {box.detection_confidence:.2f}",
                 left=center.x - half_width, top=center.y - half_height,
                 right=center.x + half_width, bottom=center.y + half_height))
         self.frames[frame_key(msg.header.stamp)] = (msg.header.stamp, boxes)
