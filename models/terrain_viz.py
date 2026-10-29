@@ -67,6 +67,7 @@ Publishes
 import io
 import json
 import math
+import time
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
@@ -156,6 +157,8 @@ class TerrainViz(GraphMember):
         # change (~16x pixel workload); reduce if bandwidth, compute, or RAM
         # is tight.
         self.texture_px = int(param(self, "terrain_texture_px", 8192))
+        # a new mosaic goes into the model at most once per this many seconds.
+        self.mosaic_redraw_s = float(param(self, "mosaic_redraw_period_s", 90.0))
         self.alpha = float(param(self, "terrain_alpha", 1.0))
         self.geoid_height = float(param(self, "geoid_height_m", 0.0))
         self.REFERENCE_FRAME = param(self, "reference_frame", "map")
@@ -183,6 +186,7 @@ class TerrainViz(GraphMember):
         # moment are the same map.
         self.mosaic = None
         self.mosaic_drawn = None
+        self.mosaic_drawn_at = None
 
         if mosaic_topic:
             self.create_subscription(MosaicOverlay, mosaic_topic,
@@ -210,16 +214,21 @@ class TerrainViz(GraphMember):
 
     def publish_when_changed(self) -> None:
         """Draw the scene again when its mesh changes, when the vehicle's map
-        changes, and when the ground it stands on moves under it. The mesh is
-        read once for each change and the ground is looked at every tick,
-        because the ground moves far more often than the scene is rebuilt."""
+        changes (at most once per `mosaic_redraw_period_s`), and when the
+        ground it stands on moves under it. The mesh is read once for each
+        change and the ground is looked at every tick, because the ground moves
+        far more often than the scene is rebuilt."""
         try:
             stamp = None if self.mesh_path is None else self.mesh_path.stat().st_mtime_ns
         except OSError:
             stamp = None
         mosaic_stamp = None if self.mosaic is None else (
             self.mosaic.header.stamp.sec, self.mosaic.header.stamp.nanosec)
-        if stamp != self.model_stamp or mosaic_stamp != self.mosaic_drawn:
+        now = time.monotonic()
+        mosaic_due = mosaic_stamp != self.mosaic_drawn and (
+            self.mosaic_drawn_at is None
+            or now - self.mosaic_drawn_at >= self.mosaic_redraw_s)
+        if stamp != self.model_stamp or mosaic_due:
             self.model_stamp = stamp
             self.mosaic_drawn = mosaic_stamp
             self.ground.drawn_at = None
@@ -230,6 +239,8 @@ class TerrainViz(GraphMember):
             if not self.build_model():
                 self.scene_pub.publish(SceneUpdate(deletions=[], entities=[]))
                 return
+            if mosaic_stamp is not None:
+                self.mosaic_drawn_at = now
         if self.model_bytes is None:
             return
         offset = self.ground.offset(self.scene_origin_lla)

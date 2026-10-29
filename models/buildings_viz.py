@@ -59,6 +59,7 @@ Publishes
 import io
 import json
 import math
+import time
 from pathlib import Path
 
 import numpy as np
@@ -383,6 +384,7 @@ class BuildingsViz(GraphMember):
         # change (~16x pixel workload); reduce if bandwidth, compute, or RAM
         # is tight.
         self.texture_px = int(param(self, "terrain_texture_px", 8192))
+        self.mosaic_redraw_s = float(param(self, "mosaic_redraw_period_s", 90.0))
         surface = param(self, "terrain_surface_file", "")
         self.side_m = scene_side(surface)
         if self.side_m is None:
@@ -408,6 +410,7 @@ class BuildingsViz(GraphMember):
         self.model_stamp = 0
         self.mosaic = None
         self.mosaic_drawn = None
+        self.mosaic_drawn_at = None
 
         if mosaic_topic:
             self.create_subscription(MosaicOverlay, mosaic_topic, self.mosaic_cb, LIVE_QOS)
@@ -432,17 +435,22 @@ class BuildingsViz(GraphMember):
         self.mosaic = msg
 
     def publish_when_changed(self) -> None:
-        """Draw the scene again when its file changes, and when the ground it
-        stands on moves under it. The file is read once for each change and
-        the ground is looked at every tick, because the ground moves far more
-        often than the scene is rebuilt."""
+        """Draw the scene again when its file changes, when the vehicle's map
+        changes (at most once per `mosaic_redraw_period_s`), and when the
+        ground it stands on moves under it. The file is read once for each
+        change and the ground is looked at every tick, because the ground moves
+        far more often than the scene is rebuilt."""
         try:
             stamp = self.path.stat().st_mtime_ns
         except OSError:
             stamp = None
         mosaic_stamp = None if self.mosaic is None else (
             self.mosaic.header.stamp.sec, self.mosaic.header.stamp.nanosec)
-        if stamp != self.model_stamp or mosaic_stamp != self.mosaic_drawn:
+        now = time.monotonic()
+        mosaic_due = mosaic_stamp != self.mosaic_drawn and (
+            self.mosaic_drawn_at is None
+            or now - self.mosaic_drawn_at >= self.mosaic_redraw_s)
+        if stamp != self.model_stamp or mosaic_due:
             self.model_stamp = stamp
             self.mosaic_drawn = mosaic_stamp
             self.ground.drawn_at = None
@@ -453,6 +461,8 @@ class BuildingsViz(GraphMember):
             if not self.build_model():
                 self.scene_pub.publish(self.empty())
                 return
+            if mosaic_stamp is not None:
+                self.mosaic_drawn_at = now
         if self.model_bytes is None:
             return
         offset = self.ground.offset(self.scene_origin_lla)
