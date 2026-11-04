@@ -13,9 +13,8 @@ that looks right and is not:
 1. The datum. A scene is anchored above mean sea level, because elevation data
    is, and a NavSatFix is above the ellipsoid. The two are a geoid separation
    apart, 33 m in Maryland.
-2. The fix. The localization origin is wherever the vehicle says home is now.
-   PX4 moves home when the vehicle arms, so a fix read once at startup and
-   held is a different ground from the one the rays meet an hour later.
+2. The anchor. The canonical localization reference places application home
+   on the Earth and composes PX4 home updates before consumers see them.
 3. The survey. A fiducial capture moves the vehicle's frame against the Earth,
    and `umd_uas/footprint.py` applies that correction to every cast. The scene
    itself does not move, so a layer drawn in that frame steps the other way by
@@ -39,10 +38,12 @@ from tf2_ros import Buffer, TransformListener
 
 # ROS2 message imports
 from sensor_msgs.msg import NavSatFix
+from std_msgs.msg import String
 
 # MAVInsight imports
 from models.frame_utils import lla_2_enu
-from models.qos_profiles import reliable_qos
+from models.qos_profiles import latched_reliable_qos
+from mavinsight.localization_reference import ReferenceState, reference_topic
 
 
 # ----------------------------------------------------------------- tunables
@@ -182,14 +183,18 @@ class FrameSurvey:
 class SceneGround:
     """The offset that puts one scene layer on the ground the rays meet.
 
-    It holds the fix that places the reference frame, reads the survey on that
-    frame, and remembers where the layer was last drawn, so a caller draws
+    It reads the anchor and survey from one canonical reference snapshot,
+    and remembers where the layer was last drawn, so a caller draws
     once for each move rather than once for each fix.
     """
 
     def __init__(self, node, reference_frame: str, local_fix_topic: str,
                  geoid_height_m: float, surface_file: str = "") -> None:
-        """Watch the fix and the survey that place `reference_frame`."""
+        """Watch reference state, or just the geographic fix for the root.
+
+        Reliable transient-local subscriptions receive retained state; the
+        existing Vehicle owner also refreshes these topics at 1 Hz.
+        """
         self.node = node
         self.reference_frame = reference_frame
         self.geoid_height = float(geoid_height_m)
@@ -200,15 +205,39 @@ class SceneGround:
             node.get_logger().warn(
                 f"cannot read launch ground from {surface_file!r}: {error}. "
                 f"The scene centre is used as ground zero.")
-        self.survey = FrameSurvey(node, reference_frame)
         self.local_fix: Optional[NavSatFix] = None
+        self.correction: Optional[tuple] = None
         # Where the layer stands now. A caller sets it after it publishes.
         self.drawn_at: Optional[np.ndarray] = None
-        node.create_subscription(NavSatFix, local_fix_topic, self._fix_cb,
-                                 reliable_qos)
+        fiducial_frame = (node.get_parameter('fiducial_frame').value
+                          if node.has_parameter('fiducial_frame') else 'fiducial')
+        if reference_frame == fiducial_frame:
+            self.correction = (0., 0., 0.)
+            node.create_subscription(NavSatFix, local_fix_topic, self._fix_cb,
+                                     latched_reliable_qos)
+        else:
+            topic = (node.get_parameter('localization_reference_topic').value
+                     if node.has_parameter('localization_reference_topic')
+                     else reference_topic(local_fix_topic))
+            node.create_subscription(String, topic, self._reference_cb,
+                                     latched_reliable_qos)
 
     def _fix_cb(self, msg: NavSatFix) -> None:
         self.local_fix = msg
+
+    def _reference_cb(self, msg: String) -> None:
+        """Use the anchor and correction together, including survey resets."""
+        try:
+            state = ReferenceState.decode(msg.data)
+            anchor = state.frame_anchor(self.reference_frame, corrected=False)
+        except (ValueError, TypeError, KeyError) as error:
+            self.node.get_logger().warn(
+                f"invalid scene localization reference: {error}",
+                throttle_duration_sec=10.0)
+            return
+        self.local_fix = as_fix(anchor)
+        self.correction = ((0., 0., 0.) if self.reference_frame == state.raw_frame
+                           else state.correction)
 
     def anchor(self, origin_lla: Sequence[float]) -> NavSatFix:
         """The scene centre in the datum a fix reports. `umd_uas/terrain.py`
@@ -224,17 +253,17 @@ class SceneGround:
         coordinates: the scene stays where it is on the Earth when the frame
         moves against it.
 
-        None while no fix has arrived to place it. A scene at the wrong offset
+        None while no reference has arrived to place it. A scene at the wrong offset
         looks correct and is wrong, which is worse than an empty panel.
         """
-        if self.local_fix is None:
+        if self.local_fix is None or self.correction is None:
             self.node.get_logger().warn(
-                f"no fix on {self.reference_frame} yet, so the scene waits. "
+                f"no reference for {self.reference_frame} yet, so the scene waits. "
                 f"Placed against the wrong home it would lie metres off the "
                 f"ground it belongs to.", throttle_duration_sec=10.0)
             return None
         return grounded_scene_offset(
-            self.local_fix, self.anchor(origin_lla), self.survey.correction(),
+            self.local_fix, self.anchor(origin_lla), self.correction,
             self.surface)
 
     def moved(self, offset: Optional[np.ndarray]) -> bool:

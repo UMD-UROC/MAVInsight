@@ -47,8 +47,10 @@ corners are its only vertices, so a colour for each corner would wash the
 whole building into one shade.
 
 Subscribes
-    <local_fix_topic>       sensor_msgs/NavSatFix, the WGS84 position of
-                            <reference_frame>
+    <local_fix_topic>       sensor_msgs/NavSatFix for a fiducial-root display
+    <localization_reference_topic> std_msgs/String, atomic anchor and correction
+                            for a vehicle-frame display; defaults to the
+                            localization/reference topic beside local_fix_topic
     <mosaic_overlay_topic>  cdcl_umd_msgs/MosaicOverlay, the live vehicle map
                             to drape over building surfaces. Empty disables it.
 Publishes
