@@ -1,3 +1,4 @@
 /**:
   ros__parameters:
-    refresh_rate: 60.0
+    # Velocity-arrow publication only; pose and TF updates follow telemetry.
+    refresh_rate: 5.0

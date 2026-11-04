@@ -99,12 +99,12 @@ class Vehicle(FrameMember):
             self.default_parameter_warning('altitude_topic')
             alt_topic = "/altitude"
 
-        # Global Refresh Rate
+        # Velocity-arrow publication rate; pose and TF updates follow telemetry.
         if self.has_parameter("refresh_rate"):
             self.REFRESH_RATE = self.get_parameter("refresh_rate").get_parameter_value().double_value
         else:
             self.default_parameter_warning("refresh_rate")
-            self.REFRESH_RATE = 60.0  # Hz
+            self.REFRESH_RATE = 5.0  # Hz
         self.PATH_CHUNK_SIZE = int(self.get_parameter("path_chunk_size").value) if self.has_parameter("path_chunk_size") else 256
         self.PATH_PUBLISH_RATE = float(self.get_parameter("path_publish_rate").value) if self.has_parameter("path_publish_rate") else 1.0
 
