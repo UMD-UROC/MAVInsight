@@ -28,13 +28,11 @@ the report; its original full quaternion remains on the MAVROS topic.
 Independent-axis tests verify labels and signs. Combined-angle behavior
 uses the user-confirmed outer-roll/inner-pitch geometry.
 
-/uasN/gimbal_encoder/comparison contains the reported-to-measured quaternion,
-its angular magnitude and rotation vector, plus mount-to-encoder and
-mount-to-reference quaternions. TF is looked up at each encoder timestamp,
-waiting for the slower body/gimbal streams; no arbitrary latest pose is
-substituted. Missing coverage drops the comparison after two seconds.
-These residuals contain mechanical zero/calibration differences and sensor
-reference disagreement. They do not isolate those causes automatically.
+The gimbal node broadcasts transforms without a TF listener. It does not
+calculate or publish /uasN/gimbal_encoder/comparison. Detailed disagreement
+can be computed offline from the recorded, source-stamped reported and encoder
+TF frames. Those frames retain mechanical zero/calibration differences and
+sensor reference disagreement; they do not isolate those causes automatically.
 
 Record stationary home/level first, then body tilts with stabilization active
 to distinguish reference disagreement from a joint offset. Record /tf,

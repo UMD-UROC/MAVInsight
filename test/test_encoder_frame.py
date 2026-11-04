@@ -1,10 +1,10 @@
 """Encoder joints retain body/level disagreement and the existing calibration."""
-from collections import deque
 from types import SimpleNamespace
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import JointState
+from builtin_interfaces.msg import Time as TimeMsg
 
 from mavinsight.localization_reference import StateHistory
 from models.gimbal_frame import encoder_rotation, reported_roll_pitch
@@ -48,7 +48,7 @@ def test_encoder_uses_existing_mount_and_time_specific_calibration():
     correction = R.from_euler('z',3,degrees=True)
     history.add(3_000_000_000,correction)
     g = SimpleNamespace(FRAME_NAME='uas3_gimbal_frame',PARENT_FRAME='uas3_gimbal_frame_offset',
-                        _encoder_calibration_history=history,_encoder_pending=deque(),
+                        _encoder_calibration_history=history,
                         tf_broadcaster=SimpleNamespace(sendTransform=received.append))
     msg = JointState()
     msg.header.frame_id = g.PARENT_FRAME
@@ -78,3 +78,23 @@ def test_encoder_uses_existing_mount_and_time_specific_calibration():
     msg.name.append('yaw'); msg.position.append(np.pi/2)
     Gimbal.publish_encoder(g,msg)
     assert len(received)==count+1
+
+
+def test_encoder_transforms_preserve_every_source_timestamp():
+    received = []
+    history = StateHistory()
+    history.add(0, R.identity())
+    g = SimpleNamespace(
+        FRAME_NAME='uas3_gimbal_frame', PARENT_FRAME='uas3_gimbal_frame_offset',
+        _encoder_calibration_history=history,
+        tf_broadcaster=SimpleNamespace(sendTransform=received.append))
+    for index in range(100):
+        msg = JointState()
+        msg.header.frame_id = g.PARENT_FRAME
+        msg.header.stamp = TimeMsg(sec=10, nanosec=index * 10_000_000)
+        msg.name = ['pitch', 'roll']
+        msg.position = [0., 0.]
+        Gimbal.publish_encoder(g, msg)
+        assert received[-1][0].header.stamp == msg.header.stamp
+        assert received[-1][1].header.stamp == msg.header.stamp
+    assert len(received) == 100
