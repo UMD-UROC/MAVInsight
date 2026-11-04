@@ -11,7 +11,13 @@ what it frames.
 Subscribes
     <camera_fov_topic>   cdcl_umd_msgs/CameraFOV
     <local_fix_topic>    sensor_msgs/NavSatFix, the WGS84 position of
-                         <localization_frame>, for the 3D outline
+                         the fiducial root, when drawing in that frame
+    <localization_reference_topic> std_msgs/String, canonical anchor and survey
+                         state when drawing in a vehicle localization frame
+
+Reference subscriptions are reliable and transient-local, with depth one.
+Vehicle publishes changes immediately and refreshes current state at 1 Hz.
+The geographic Map outline remains available while the 3D reference is pending.
 Publishes
     <footprint_viz_topic>      visualization_msgs/MarkerArray
     <footprint_geojson_topic>  foxglove_msgs/GeoJSON
@@ -25,14 +31,14 @@ from builtin_interfaces.msg import Duration
 from cdcl_umd_msgs.msg import CameraFOV
 from geometry_msgs.msg import Point, Vector3
 from sensor_msgs.msg import NavSatFix
-from std_msgs.msg import ColorRGBA, Header
+from std_msgs.msg import ColorRGBA, Header, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 # MAVInsight imports
 from models.frame_utils import lla_2_enu
 from models.graph_member import GraphMember
-from models.qos_profiles import reliable_qos
-from models.scene_ground import FrameSurvey
+from models.qos_profiles import latched_reliable_qos, reliable_qos
+from mavinsight.localization_reference import ReferenceState, reference_topic
 
 try:
     from foxglove_msgs.msg import GeoJSON
@@ -83,10 +89,21 @@ class FootprintViz(GraphMember):
         self.color = ColorRGBA(r=(r / 255.0), g=(g / 255.0), b=(b / 255.0), a=a)
 
         self.local_fix = None
+        self.correction = None
         # The outline arrives as WGS84 measured from the surveyed frame, so
         # coming back into that frame takes the survey off again.
-        self.survey = FrameSurvey(self, self.LOC_FRAME)
-        self.create_subscription(NavSatFix, local_fix_topic, self.local_fix_cb, reliable_qos)
+        fiducial_frame = param(self, "fiducial_frame", "fiducial")
+        if self.LOC_FRAME == fiducial_frame:
+            # The global root has no survey edge. Its geographic anchor is
+            # enough; receiving unrelated vehicle transforms serves no purpose.
+            self.correction = (0., 0., 0.)
+            self.create_subscription(NavSatFix, local_fix_topic, self.local_fix_cb,
+                                     latched_reliable_qos)
+        else:
+            topic = param(self, "localization_reference_topic",
+                          reference_topic(local_fix_topic))
+            self.create_subscription(String, topic, self.reference_cb,
+                                     latched_reliable_qos)
         self.create_subscription(CameraFOV, fov_topic, self.fov_cb, reliable_qos)
         self.marker_pub = self.create_publisher(MarkerArray, viz_topic, reliable_qos)
         self.geojson_pub = None
@@ -102,20 +119,34 @@ class FootprintViz(GraphMember):
     def local_fix_cb(self, msg: NavSatFix) -> None:
         self.local_fix = msg
 
+    def reference_cb(self, msg: String) -> None:
+        """Read anchor and correction atomically, including explicit resets."""
+        try:
+            state = ReferenceState.decode(msg.data)
+            lat, lon, alt = state.frame_anchor(self.LOC_FRAME, corrected=False)
+        except (ValueError, TypeError, KeyError) as error:
+            self.get_logger().warn(
+                f"invalid footprint localization reference: {error}",
+                throttle_duration_sec=10.0)
+            return
+        self.local_fix = NavSatFix(latitude=lat, longitude=lon, altitude=alt)
+        self.correction = ((0., 0., 0.) if self.LOC_FRAME == state.raw_frame
+                           else state.correction)
+
     def fov_cb(self, msg: CameraFOV) -> None:
         if not msg.fov_polygon:
             return
         self.publish_geojson(msg)
-        if self.local_fix is None:
+        if self.local_fix is None or self.correction is None:
             self.get_logger().warn(
-                "no local fix yet, so the footprint cannot be placed in the 3D panel",
+                "waiting for geographic reference, so the footprint cannot be placed in the 3D panel",
                 throttle_duration_sec=10.0)
             return
 
         # ignore_alt must stay False: the default substitutes the reference's
         # altitude for the point's, which would flatten the outline onto the
         # frame origin's height instead of draping it over the ground.
-        correction = self.survey.correction()
+        correction = self.correction
         points = [Point(x=e - correction[0], y=n - correction[1],
                         z=u - correction[2]) for e, n, u in
                   (lla_2_enu(self.local_fix, fix, ignore_alt=False)

@@ -604,6 +604,7 @@ class Vehicle(FrameMember):
     def _publish_reference_fixes(self):
         """Also serve existing volatile fix readers that join after startup."""
         stamp = self.get_clock().now().to_msg()
+        self._publish_latest_reference()
         if self._fiducial_lla and len(self._fiducial_lla) == 3:
             self._fiducial_fix_pub.publish(NavSatFix(
                 header=Header(frame_id=self.FIDUCIAL_FRAME, stamp=stamp),
@@ -631,12 +632,17 @@ class Vehicle(FrameMember):
             return
         message = String(data=state.encode())
         self.reference_events_pub.publish(message)
+        self._publish_latest_reference()
+
+    def _publish_latest_reference(self):
+        """Refresh retained state without manufacturing a new reference event."""
         # A delayed event belongs in history, not in the latched latest state.
         latest_stamp = max(self.localization_reference.latest_home_stamp,
                            getattr(self, '_correction_activation', 0))
         latest = self.localization_reference.state(
             latest_stamp, self.UNCORRECTED_HOME_FRAME, self.HOME_FRAME, self.EKF_FRAME)
-        self.reference_pub.publish(String(data=latest.encode()))
+        if latest is not None:
+            self.reference_pub.publish(String(data=latest.encode()))
 
     def home_cb(self, msg: HomePosition):
         """Consume an atomic geographic/local pair, never separate home edges.
